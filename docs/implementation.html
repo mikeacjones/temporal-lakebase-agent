@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Verified implementation record and decision rationale for the Temporal and Databricks Lakebase underwriting agent demo.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23087f76'/%3E%3C/svg%3E">
+  <title>What We Built &amp; Why — Temporal + Lakebase AgentWorkflow</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171512;
+      --muted: #625d55;
+      --paper: #fbfaf6;
+      --surface: #ffffff;
+      --soft: #f1eee7;
+      --line: #d8d2c6;
+      --temporal: #f45d22;
+      --temporal-deep: #ad3108;
+      --lakebase: #087f76;
+      --lakebase-deep: #075b56;
+      --lakebase-soft: #e4f5f1;
+      --blue: #315e9d;
+      --blue-soft: #eaf1fb;
+      --green: #28794c;
+      --green-soft: #e8f4ec;
+      --amber: #99610a;
+      --amber-soft: #fff1d6;
+      --slate: #2b3440;
+      --shadow: 0 16px 48px rgba(31, 27, 21, 0.09);
+      --radius-lg: 26px;
+      --radius-md: 16px;
+      --max: 1180px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 6rem;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 8% 2%, rgba(244, 93, 34, 0.10), transparent 28rem),
+        radial-gradient(circle at 92% 13%, rgba(8, 127, 118, 0.11), transparent 31rem),
+        var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      text-rendering: optimizeLegibility;
+    }
+
+    a { color: var(--lakebase-deep); text-underline-offset: 0.18em; }
+    a:hover { color: var(--temporal-deep); }
+    a:focus-visible, summary:focus-visible {
+      outline: 3px solid var(--temporal);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+
+    .skip-link {
+      position: fixed;
+      z-index: 100;
+      top: 0.75rem;
+      left: 0.75rem;
+      transform: translateY(-180%);
+      padding: 0.65rem 0.9rem;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fff;
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .site-header {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      border-bottom: 1px solid rgba(23, 21, 18, 0.12);
+      background: rgba(251, 250, 246, 0.92);
+      -webkit-backdrop-filter: blur(18px);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-shell {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(calc(100% - 2rem), var(--max));
+      min-height: 4.5rem;
+      margin-inline: auto;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.72rem;
+      color: var(--ink);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      background: conic-gradient(from 42deg, var(--temporal) 0 46%, var(--lakebase) 46% 96%, var(--ink) 96% 100%);
+      box-shadow: inset 0 0 0 5px var(--paper);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .nav-links a {
+      display: inline-block;
+      padding: 0.5rem 0.72rem;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .nav-links a:hover { background: var(--soft); color: var(--ink); }
+    .nav-links a[aria-current="page"] { background: var(--ink); color: #fff; }
+
+    main { overflow: hidden; }
+
+    .shell {
+      width: min(calc(100% - 2rem), var(--max));
+      margin-inline: auto;
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(19rem, 0.8fr);
+      gap: clamp(2rem, 6vw, 5.5rem);
+      align-items: center;
+      padding-block: clamp(4.5rem, 10vw, 8rem) clamp(3.5rem, 7vw, 6rem);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      margin: 0 0 1.1rem;
+      color: var(--temporal-deep);
+      font-size: 0.76rem;
+      font-weight: 850;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 1.8rem;
+      height: 2px;
+      background: var(--temporal);
+      content: "";
+    }
+
+    h1, h2, h3, p { overflow-wrap: anywhere; }
+    h1, h2, h3 { line-height: 1.12; }
+
+    h1 {
+      max-width: 13ch;
+      margin: 0;
+      font-size: clamp(3rem, 7vw, 6.6rem);
+      letter-spacing: -0.065em;
+    }
+
+    .hero h1 span { color: var(--lakebase); }
+
+    .lede {
+      max-width: 65ch;
+      margin: 1.5rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1.08rem, 1.8vw, 1.34rem);
+      line-height: 1.55;
+    }
+
+    .hero-card {
+      position: relative;
+      padding: clamp(1.5rem, 4vw, 2.4rem);
+      overflow: hidden;
+      border: 1px solid rgba(23, 21, 18, 0.12);
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card::after {
+      position: absolute;
+      right: -4rem;
+      bottom: -5rem;
+      width: 13rem;
+      height: 13rem;
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(8, 127, 118, 0.15), rgba(244, 93, 34, 0.18));
+      content: "";
+    }
+
+    .hero-card p { position: relative; z-index: 1; margin: 0; }
+    .hero-card .statement { font-size: clamp(1.5rem, 3vw, 2.25rem); font-weight: 850; letter-spacing: -0.04em; line-height: 1.2; }
+    .hero-card .statement + p { max-width: 36ch; margin-top: 1rem; color: var(--muted); }
+    .temporal-text { color: var(--temporal-deep); }
+    .lakebase-text { color: var(--lakebase-deep); }
+
+    .status-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      margin-bottom: 2rem;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: 0 7px 25px rgba(31, 27, 21, 0.05);
+    }
+
+    .stat {
+      min-width: 0;
+      padding: 1.15rem 1.3rem;
+      border-right: 1px solid var(--line);
+    }
+    .stat:last-child { border-right: 0; }
+    .stat-label { display: block; color: var(--muted); font-size: 0.72rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+    .stat-value { display: block; margin-top: 0.18rem; font-size: 1.05rem; font-weight: 850; line-height: 1.35; }
+    .dot { display: inline-block; width: 0.62rem; height: 0.62rem; margin-right: 0.42rem; border-radius: 50%; background: var(--green); }
+
+    section { padding-block: clamp(4rem, 8vw, 7rem); }
+    section + section { border-top: 1px solid rgba(23, 21, 18, 0.10); }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.7fr) minmax(18rem, 0.9fr);
+      gap: 2rem;
+      align-items: end;
+      margin-bottom: 2.6rem;
+    }
+
+    h2 {
+      max-width: 15ch;
+      margin: 0;
+      font-size: clamp(2.2rem, 5vw, 4.4rem);
+      letter-spacing: -0.055em;
+    }
+
+    .section-intro { margin: 0; color: var(--muted); font-size: 1.08rem; }
+
+    .architecture-panel {
+      padding: clamp(1rem, 3vw, 2.2rem);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: #fff;
+      box-shadow: var(--shadow);
+    }
+
+    .architecture-panel svg { display: block; width: 100%; height: auto; }
+
+    .flow-caption {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem 1.2rem;
+      justify-content: center;
+      margin: 1.2rem 0 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .legend-key { display: inline-flex; align-items: center; gap: 0.42rem; }
+    .legend-line { width: 1.5rem; height: 3px; border-radius: 999px; background: currentColor; }
+
+    .callout {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding: 1.25rem 1.4rem;
+      border-left: 4px solid var(--lakebase);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--lakebase-soft);
+    }
+    .callout strong { display: block; margin-bottom: 0.2rem; }
+    .callout p { margin: 0; color: #254e4a; }
+    .callout-index { color: var(--lakebase-deep); font-size: 1.5rem; font-weight: 900; line-height: 1; }
+
+    .build-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 1rem;
+    }
+
+    .build-card {
+      grid-column: span 4;
+      display: flex;
+      flex-direction: column;
+      min-height: 18rem;
+      padding: 1.5rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: 0 8px 22px rgba(31, 27, 21, 0.045);
+    }
+    .build-card.wide { grid-column: span 6; }
+    .build-card .number { color: var(--temporal-deep); font-size: 0.76rem; font-weight: 900; letter-spacing: 0.12em; }
+    .build-card h3 { margin: auto 0 0.65rem; font-size: 1.45rem; letter-spacing: -0.035em; }
+    .build-card p { margin: 0; color: var(--muted); }
+    .build-card code { color: var(--lakebase-deep); }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      gap: 0.4rem;
+      margin-top: 1.15rem;
+      padding: 0.35rem 0.62rem;
+      border-radius: 999px;
+      background: var(--green-soft);
+      color: #165b34;
+      font-size: 0.72rem;
+      font-weight: 850;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .tag::before { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--green); content: ""; }
+
+    .decision-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .decision {
+      position: relative;
+      padding: 2rem;
+      overflow: hidden;
+      border-radius: var(--radius-lg);
+      color: #fff;
+    }
+    .decision.temporal { background: var(--slate); }
+    .decision.lakebase { background: var(--lakebase-deep); }
+    .decision::after {
+      position: absolute;
+      top: -5rem;
+      right: -3rem;
+      width: 14rem;
+      height: 14rem;
+      border: 1px solid rgba(255,255,255,0.17);
+      border-radius: 50%;
+      box-shadow: 0 0 0 2.5rem rgba(255,255,255,0.04), 0 0 0 5rem rgba(255,255,255,0.03);
+      content: "";
+    }
+    .decision-kicker { position: relative; z-index: 1; margin: 0 0 0.7rem; color: rgba(255,255,255,0.75); font-size: 0.75rem; font-weight: 850; letter-spacing: 0.12em; text-transform: uppercase; }
+    .decision h3 { position: relative; z-index: 1; max-width: 17ch; margin: 0 0 1rem; font-size: clamp(1.7rem, 3vw, 2.6rem); letter-spacing: -0.045em; }
+    .decision p { position: relative; z-index: 1; max-width: 60ch; margin: 0; color: rgba(255,255,255,0.82); }
+    .decision ul { position: relative; z-index: 1; margin: 1.35rem 0 0; padding-left: 1.2rem; }
+    .decision li + li { margin-top: 0.45rem; }
+
+    .comparison-wrap {
+      margin-top: 1.2rem;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 1rem 1.1rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--soft); color: var(--ink); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 780; }
+    .yes { color: var(--green); font-weight: 850; }
+    .build-it { color: var(--amber); font-weight: 850; }
+
+    .fairness-note {
+      margin: 1.25rem 0 0;
+      padding: 1rem 1.2rem;
+      border: 1px solid #e5c57f;
+      border-radius: var(--radius-md);
+      background: var(--amber-soft);
+      color: #664004;
+    }
+
+    .evidence-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(20rem, 1.15fr);
+      gap: 1.2rem;
+      align-items: start;
+    }
+
+    .evidence-card {
+      padding: 1.5rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    .evidence-card h3 { margin: 0 0 1.1rem; font-size: 1.25rem; }
+    .evidence-list { margin: 0; padding: 0; list-style: none; }
+    .evidence-list li { display: grid; grid-template-columns: 1rem 1fr; gap: 0.65rem; padding-block: 0.72rem; border-top: 1px solid var(--line); }
+    .evidence-list li:first-child { border-top: 0; padding-top: 0; }
+    .check { width: 1rem; height: 1rem; margin-top: 0.28rem; border-radius: 50%; background: var(--green); box-shadow: inset 0 0 0 3px var(--green-soft); }
+
+    code, .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.88em;
+      overflow-wrap: anywhere;
+    }
+
+    .proof {
+      overflow: hidden;
+      border: 1px solid #28384a;
+      border-radius: var(--radius-md);
+      background: #151c24;
+      color: #e7edf4;
+      box-shadow: var(--shadow);
+    }
+
+    .proof-bar { display: flex; align-items: center; gap: 0.4rem; padding: 0.8rem 1rem; border-bottom: 1px solid #2b3a4a; background: #1d2631; }
+    .proof-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #718397; }
+    .proof-dot:first-child { background: var(--temporal); }
+    .proof-dot:nth-child(2) { background: #d7a62c; }
+    .proof-dot:nth-child(3) { background: #31a771; }
+    .proof-title { margin-left: 0.4rem; color: #9eacbb; font-size: 0.73rem; font-weight: 700; letter-spacing: 0.05em; }
+    .proof dl { display: grid; grid-template-columns: minmax(9rem, 0.75fr) minmax(0, 1.25fr); margin: 0; padding: 1.2rem 1.3rem; }
+    .proof dt, .proof dd { margin: 0; padding-block: 0.48rem; border-bottom: 1px solid #283644; }
+    .proof dt { color: #99a9b8; }
+    .proof dd { color: #f7f9fb; font-weight: 730; }
+    .proof dt:last-of-type, .proof dd:last-of-type { border-bottom: 0; }
+    .proof .highlight { color: #63ddc8; }
+
+    .scope-columns {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .scope-card {
+      padding: 1.5rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .scope-card.complete { border-top: 5px solid var(--green); }
+    .scope-card.scoped { border-top: 5px solid var(--blue); }
+    .scope-card.pending { border-top: 5px solid var(--amber); }
+    .scope-card h3 { margin: 0; font-size: 1.3rem; }
+    .scope-card .scope-label { margin: 0.35rem 0 1rem; color: var(--muted); font-size: 0.84rem; }
+    .scope-card ul { margin: 0; padding-left: 1.15rem; }
+    .scope-card li + li { margin-top: 0.65rem; }
+
+    .security-band {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(20rem, 1.1fr);
+      gap: 2rem;
+      align-items: start;
+      margin-top: 1rem;
+      padding: clamp(1.5rem, 4vw, 2.5rem);
+      border-radius: var(--radius-lg);
+      background: var(--blue-soft);
+    }
+    .security-band h3 { margin: 0; font-size: clamp(1.7rem, 3vw, 2.5rem); letter-spacing: -0.04em; }
+    .security-band p { margin: 0.8rem 0 0; color: #3b4f69; }
+    .permission-list { display: grid; gap: 0.55rem; margin: 0; padding: 0; list-style: none; }
+    .permission-list li { padding: 0.75rem 0.9rem; border-radius: 10px; background: rgba(255,255,255,0.72); color: #253951; font-weight: 670; }
+    .permission-list b { color: #1f579c; }
+
+    .next-step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1rem;
+      align-items: start;
+      padding: 1.25rem 0;
+      border-top: 1px solid var(--line);
+    }
+    .next-step:first-child { border-top: 0; padding-top: 0; }
+    .step-number { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--amber-soft); color: var(--amber); font-weight: 900; }
+    .next-step h3 { margin: 0 0 0.25rem; font-size: 1.1rem; }
+    .next-step p { margin: 0; color: var(--muted); }
+
+    .closing {
+      margin-bottom: clamp(3rem, 7vw, 6rem);
+      padding: clamp(2rem, 6vw, 4.5rem);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(125deg, var(--ink), #27393a);
+      color: #fff;
+      text-align: center;
+    }
+    .closing p { max-width: 58ch; margin: 1rem auto 0; color: rgba(255,255,255,0.74); font-size: 1.08rem; }
+    .closing strong { display: block; max-width: 24ch; margin-inline: auto; font-size: clamp(2rem, 5vw, 4rem); letter-spacing: -0.05em; line-height: 1.08; }
+
+    footer { padding: 2rem 0 3rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.84rem; }
+    .footer-row { display: flex; justify-content: space-between; gap: 2rem; }
+    .footer-row p { margin: 0; }
+
+    @media (max-width: 900px) {
+      .nav-shell { align-items: flex-start; flex-direction: column; padding-block: 0.8rem; }
+      .nav-links { width: 100%; overflow-x: auto; padding-bottom: 0.1rem; }
+      .hero, .section-head, .evidence-layout, .security-band { grid-template-columns: 1fr; }
+      h1 { max-width: 11ch; }
+      .status-strip { grid-template-columns: repeat(2, 1fr); }
+      .stat:nth-child(2) { border-right: 0; }
+      .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .build-card, .build-card.wide { grid-column: span 6; }
+      .scope-columns { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      body { font-size: 15px; }
+      .shell, .nav-shell { width: min(calc(100% - 1.25rem), var(--max)); }
+      .hero { padding-top: 3.5rem; }
+      .status-strip, .decision-grid { grid-template-columns: 1fr; }
+      .stat { border-right: 0; border-bottom: 1px solid var(--line); }
+      .stat:last-child { border-bottom: 0; }
+      .build-card, .build-card.wide { grid-column: 1 / -1; min-height: 15rem; }
+      .proof dl { grid-template-columns: 1fr; }
+      .proof dt { padding-bottom: 0; border-bottom: 0; }
+      .proof dd { padding-top: 0.1rem; }
+      .footer-row { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+
+    @media print {
+      @page { margin: 13mm; }
+      :root { --paper: #fff; --surface: #fff; }
+      body { background: #fff; color: #000; font-size: 10pt; }
+      .site-header, .skip-link { display: none; }
+      .shell { width: 100%; }
+      .hero { grid-template-columns: 1.15fr 0.85fr; min-height: auto; padding-block: 1rem 2rem; }
+      h1 { font-size: 42pt; }
+      h2 { font-size: 26pt; }
+      section { padding-block: 1.5rem; break-before: auto; }
+      .architecture-panel, .build-card, .evidence-card, .proof, .scope-card, .decision, .security-band, .closing { box-shadow: none; break-inside: avoid; }
+      .build-card { min-height: 0; }
+      a { color: inherit; text-decoration: none; }
+      a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 8pt; }
+      .closing { background: #222 !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav-shell" aria-label="Documentation">
+      <a class="brand" href="../README.md"><span class="brand-mark" aria-hidden="true"></span>Temporal × Lakebase</a>
+      <ul class="nav-links">
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="implementation.html" aria-current="page">Built &amp; why</a></li>
+        <li><a href="demo_runbook.html">Demo runbook</a></li>
+        <li><a href="../README.md">README</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Verified implementation record · 12 July 2026</p>
+          <h1>What we built <span>&amp; why.</span></h1>
+          <p class="lede">A production-shaped loan-underwriting agent where Temporal protects execution through failure and human delay, while Databricks Lakebase connects governed lakehouse policy to a low-latency operational application.</p>
+        </div>
+        <aside class="hero-card" aria-label="Core product thesis">
+          <p class="statement"><span class="temporal-text">Temporal protects progress.</span><br><span class="lakebase-text">Lakebase closes the governed data loop.</span></p>
+          <p>Those are separate claims, implemented by separate layers, and demonstrated with separate evidence.</p>
+        </aside>
+      </header>
+
+      <div class="status-strip" aria-label="Deployment status summary">
+        <div class="stat"><span class="stat-label">Release</span><span class="stat-value"><span class="dot"></span>Healthy · revision 4</span></div>
+        <div class="stat"><span class="stat-label">Runtime</span><span class="stat-value">EKS · 2 web + versioned worker</span></div>
+        <div class="stat"><span class="stat-label">Data plane</span><span class="stat-value">Lakebase + Unity Catalog</span></div>
+        <div class="stat"><span class="stat-label">Validation</span><span class="stat-value">19 tests · live smoke proof</span></div>
+      </div>
+    </div>
+
+    <section id="shape">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">System shape</p>
+            <h2>One application. Three clear planes.</h2>
+          </div>
+          <p class="section-intro">Compute, durable orchestration, and governed data are deliberately decoupled. Databricks is the data plane—not the container runtime. The web/API and worker can scale, roll out, and fail independently on EKS.</p>
+        </div>
+
+        <figure class="architecture-panel">
+          <svg viewBox="0 0 1120 520" role="img" aria-labelledby="diagram-title diagram-desc">
+            <title id="diagram-title">Implemented runtime and governed data flow</title>
+            <desc id="diagram-desc">The browser reaches a private web API on EKS. The API starts and signals workflows in Temporal Cloud. A versioned worker managed by the Temporal Worker Controller runs activities. The API and worker use OAuth to access Lakebase. A Unity Catalog policy table synchronizes into Lakebase. Lakebase Change Data Feed back to Unity Catalog remains pending.</desc>
+            <defs>
+              <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#ad3108"/></marker>
+              <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#075b56"/></marker>
+              <marker id="arrow-dash" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#99610a"/></marker>
+              <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#171512" flood-opacity="0.10"/></filter>
+            </defs>
+
+            <rect x="18" y="18" width="1084" height="484" rx="24" fill="#fbfaf6" stroke="#d8d2c6"/>
+            <text x="55" y="59" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" fill="#625d55">USER EDGE</text>
+            <text x="292" y="59" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" fill="#625d55">AWS EKS · US-WEST-2</text>
+            <text x="810" y="59" font-family="system-ui, sans-serif" font-size="13" font-weight="800" letter-spacing="2" fill="#625d55">DATABRICKS · US-EAST-2</text>
+
+            <rect x="52" y="100" width="170" height="98" rx="16" fill="#fff" stroke="#d8d2c6" filter="url(#soft-shadow)"/>
+            <circle cx="83" cy="133" r="12" fill="#171512"/>
+            <path d="M66 174c2-17 31-17 34 0" stroke="#171512" stroke-width="5" fill="none" stroke-linecap="round"/>
+            <text x="112" y="136" font-family="system-ui, sans-serif" font-size="18" font-weight="800" fill="#171512">Reviewer</text>
+            <text x="112" y="160" font-family="system-ui, sans-serif" font-size="12" fill="#625d55">Loopback-only UI</text>
+            <text x="112" y="178" font-family="system-ui, sans-serif" font-size="12" fill="#625d55">Approve · deny · ask</text>
+
+            <rect x="276" y="92" width="248" height="118" rx="18" fill="#fff" stroke="#315e9d" stroke-width="2" filter="url(#soft-shadow)"/>
+            <rect x="276" y="92" width="12" height="118" rx="6" fill="#315e9d"/>
+            <text x="310" y="124" font-family="system-ui, sans-serif" font-size="19" font-weight="800" fill="#171512">Web + API</text>
+            <text x="310" y="150" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">2 non-root replicas</text>
+            <text x="310" y="172" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">React · FastAPI · ClusterIP</text>
+            <rect x="310" y="184" width="122" height="17" rx="8" fill="#e8f4ec"/>
+            <text x="323" y="196" font-family="system-ui, sans-serif" font-size="10" font-weight="800" fill="#28794c">HEALTHY</text>
+
+            <rect x="276" y="290" width="248" height="142" rx="18" fill="#fff" stroke="#f45d22" stroke-width="2" filter="url(#soft-shadow)"/>
+            <rect x="276" y="290" width="12" height="142" rx="6" fill="#f45d22"/>
+            <text x="310" y="322" font-family="system-ui, sans-serif" font-size="19" font-weight="800" fill="#171512">Versioned worker</text>
+            <text x="310" y="348" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">Worker Controller managed</text>
+            <text x="310" y="370" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">HPA 1–10 · CPU 70%</text>
+            <text x="310" y="392" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">PDB · 1 available</text>
+            <rect x="310" y="406" width="140" height="17" rx="8" fill="#e8f4ec"/>
+            <text x="323" y="418" font-family="system-ui, sans-serif" font-size="10" font-weight="800" fill="#28794c">READY · VERSIONED</text>
+
+            <rect x="565" y="185" width="190" height="150" rx="22" fill="#2b3440" filter="url(#soft-shadow)"/>
+            <circle cx="600" cy="224" r="17" fill="#f45d22"/>
+            <path d="M592 224h16M600 216v16" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+            <text x="628" y="229" font-family="system-ui, sans-serif" font-size="19" font-weight="800" fill="#fff">Temporal</text>
+            <text x="590" y="264" font-family="system-ui, sans-serif" font-size="13" fill="#d5dbe2">Durable workflow history</text>
+            <text x="590" y="286" font-family="system-ui, sans-serif" font-size="13" fill="#d5dbe2">Retries · signals · waits</text>
+            <text x="590" y="308" font-family="system-ui, sans-serif" font-size="13" fill="#d5dbe2">Cloud control plane</text>
+
+            <rect x="800" y="94" width="260" height="142" rx="20" fill="#e4f5f1" stroke="#087f76" stroke-width="2" filter="url(#soft-shadow)"/>
+            <ellipse cx="840" cy="128" rx="20" ry="8" fill="#087f76"/>
+            <path d="M820 128v25c0 5 9 9 20 9s20-4 20-9v-25" fill="#087f76" opacity="0.72"/>
+            <text x="878" y="133" font-family="system-ui, sans-serif" font-size="19" font-weight="800" fill="#075b56">Lakebase</text>
+            <text x="828" y="180" font-family="system-ui, sans-serif" font-size="13" fill="#254e4a">Operational Postgres</text>
+            <text x="828" y="202" font-family="system-ui, sans-serif" font-size="13" fill="#254e4a">agent_ops + agent_policy</text>
+            <text x="828" y="222" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#28794c">READY · OAUTH</text>
+
+            <rect x="800" y="322" width="260" height="120" rx="20" fill="#fff" stroke="#171512" stroke-width="2" filter="url(#soft-shadow)"/>
+            <path d="M827 360l20-12 20 12-20 12zM827 370l20 12 20-12" stroke="#171512" stroke-width="3" fill="none" stroke-linejoin="round"/>
+            <text x="884" y="364" font-family="system-ui, sans-serif" font-size="19" font-weight="800" fill="#171512">Unity Catalog</text>
+            <text x="828" y="406" font-family="system-ui, sans-serif" font-size="13" fill="#625d55">Governed policy + Delta audit</text>
+            <text x="828" y="426" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#28794c">POLICY SOURCE LIVE</text>
+
+            <path d="M222 149H267" stroke="#315e9d" stroke-width="4" marker-end="url(#arrow-teal)"/>
+            <path d="M524 148C565 148 570 176 594 185" stroke="#ad3108" stroke-width="4" fill="none" marker-end="url(#arrow-orange)"/>
+            <path d="M565 294C548 318 544 355 524 360" stroke="#ad3108" stroke-width="4" fill="none" marker-end="url(#arrow-orange)"/>
+            <path d="M524 118C655 68 706 111 800 143" stroke="#075b56" stroke-width="4" fill="none" marker-end="url(#arrow-teal)"/>
+            <path d="M524 403C665 458 716 277 800 204" stroke="#075b56" stroke-width="4" fill="none" marker-end="url(#arrow-teal)"/>
+            <path d="M930 322V246" stroke="#075b56" stroke-width="4" marker-end="url(#arrow-teal)"/>
+            <text x="943" y="286" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#075b56">SYNCED POLICY</text>
+            <path d="M1025 236v77" stroke="#99610a" stroke-width="4" stroke-dasharray="8 7" marker-end="url(#arrow-dash)"/>
+            <text x="1036" y="275" font-family="system-ui, sans-serif" font-size="11" font-weight="800" fill="#99610a" transform="rotate(90 1036 275)">CDF PENDING</text>
+          </svg>
+          <figcaption class="flow-caption">
+            <span class="legend-key" style="color:#ad3108"><span class="legend-line"></span>Durable orchestration</span>
+            <span class="legend-key" style="color:#075b56"><span class="legend-line"></span>Operational/governed data</span>
+            <span class="legend-key" style="color:#99610a"><span class="legend-line"></span>Pending audit path</span>
+          </figcaption>
+        </figure>
+
+        <aside class="callout">
+          <span class="callout-index" aria-hidden="true">↳</span>
+          <div><strong>The critical boundary</strong><p>No worker or web process runs as a Databricks App. EKS supplies containerized, independently tunable compute; Databricks supplies Lakebase and Unity Catalog.</p></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="built">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Completed build</p>
+            <h2>Eight layers, verified end to end.</h2>
+          </div>
+          <p class="section-intro">The implementation goes beyond an application scaffold: storage, identity, database, governed policy, container runtime, worker lifecycle, and a live workflow were all provisioned and checked.</p>
+        </div>
+
+        <div class="build-grid">
+          <article class="build-card">
+            <span class="number">01 · STORAGE</span>
+            <h3>S3 + Unity Catalog foundation</h3>
+            <p>A dedicated, private, encrypted S3 bucket backs the <code>agentworkflow_lakehouse</code> managed catalog through a scoped Unity Catalog IAM role, credential, and external location.</p>
+            <span class="tag">Verified</span>
+          </article>
+          <article class="build-card">
+            <span class="number">02 · POSTGRES</span>
+            <h3>Lakebase production branch</h3>
+            <p>A Postgres 17 project with a protected, ready <code>production</code> branch and active primary endpoint hosts the migrated <code>agent_ops</code> schema.</p>
+            <span class="tag">11 objects present</span>
+          </article>
+          <article class="build-card">
+            <span class="number">03 · GOVERNANCE</span>
+            <h3>Managed policy serving</h3>
+            <p>Six underwriting policy rows are governed in Unity Catalog and continuously materialized as read-only <code>agent_policy.underwriting_policy_limits</code> in Lakebase.</p>
+            <span class="tag">Online continuous</span>
+          </article>
+          <article class="build-card wide">
+            <span class="number">04 · CONTAINER RUNTIME</span>
+            <h3>Immutable web and worker images</h3>
+            <p>Separate non-root amd64 images were built and pushed to dedicated scan-on-push ECR repositories with immutable tag <code>20260712-a91e17b3d04a</code>. The two artifacts let HTTP capacity and Temporal poller capacity evolve independently.</p>
+            <span class="tag">Digests recorded</span>
+          </article>
+          <article class="build-card wide">
+            <span class="number">05 · EKS ACCESS + RELEASE</span>
+            <h3>Trust repaired; Helm deployed</h3>
+            <p>The stale human principal on <code>AmazonEKSAutoClusterRole-Ingbar</code> was replaced with the current administrator SSO role while preserving EKS service trust. Helm release <code>lakebase-agentworkflow</code> revision 4 is healthy in <code>tf-demo-zsvab</code>.</p>
+            <span class="tag">Cluster admin verified</span>
+          </article>
+          <article class="build-card">
+            <span class="number">06 · WORKER LIFECYCLE</span>
+            <h3>Safe versioned rollout</h3>
+            <p>Temporal Worker Controller owns the <code>WorkerDeployment</code>. Each active build gets its own Deployment, 1–10 replica HPA at 70% CPU, and PDB requiring one available replica.</p>
+            <span class="tag">Ready</span>
+          </article>
+          <article class="build-card">
+            <span class="number">07 · RUNTIME IDENTITY</span>
+            <h3>Least-privilege OAuth</h3>
+            <p>A dedicated Databricks service principal receives Lakebase <code>CAN_USE</code>, short-lived database credentials, scoped <code>agent_ops</code> writes, and read-only policy access—without project or UC administration.</p>
+            <span class="tag">No static DB password</span>
+          </article>
+          <article class="build-card">
+            <span class="number">08 · PROOF</span>
+            <h3>Live smoke workflow</h3>
+            <p>A real Temporal execution reached the durable review gate after four activities and proved that the decision used <code>policy_source=lakebase_synced_table</code>.</p>
+            <span class="tag">Awaiting review by design</span>
+          </article>
+        </div>
+
+        <h3 style="margin:3rem 0 0.7rem;font-size:clamp(1.7rem,3vw,2.5rem);letter-spacing:-0.04em">Deployed inventory</h3>
+        <p class="section-intro" style="max-width:76ch">Concrete resource names and versions are included so the page can be used as an implementation record, not only as a design summary.</p>
+        <div class="comparison-wrap" role="region" aria-label="Deployed resource inventory" tabindex="0">
+          <table>
+            <thead>
+              <tr><th scope="col">Layer</th><th scope="col">Verified resource</th><th scope="col">Current detail</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>AWS storage</td><td><code>temporal-lakebase-agentworkflow-429214323166-us-east-2</code></td><td>SSE-S3, public access blocked, TLS-only policy, BucketOwnerEnforced</td></tr>
+              <tr><td>Unity Catalog</td><td><code>agentworkflow_lakehouse</code></td><td>Managed root in the dedicated S3 bucket; <code>agent_ops</code>, <code>governed</code>, and <code>sync_metadata</code> schemas</td></tr>
+              <tr><td>Lakebase</td><td><code>temporal-lakebase-agentworkflow / production / primary</code></td><td>Postgres 17; branch <span class="yes">READY</span>; endpoint <span class="yes">ACTIVE</span></td></tr>
+              <tr><td>Policy sync</td><td><code>agentworkflow_lakehouse.governed.underwriting_policy_limits</code> → <code>agent_policy.underwriting_policy_limits</code></td><td>Pipeline <code>ab876963-de71-49c4-b312-48debf8a2dc9</code>; six rows; continuous online update</td></tr>
+              <tr><td>EKS</td><td><code>ferocious-electro-pumpkin</code> · <code>tf-demo-zsvab</code></td><td>Kubernetes 1.35; cert-manager 1.20.2; Worker Controller app 1.7.0 / chart 0.26.0</td></tr>
+              <tr><td>Helm</td><td><code>lakebase-agentworkflow</code></td><td>Revision 4; two healthy web/API replicas; private <code>ClusterIP</code></td></tr>
+              <tr><td>Web image</td><td><code>temporal-lakebase-agentworkflow-web:20260712-a91e17b3d04a</code></td><td><code>sha256:2ce9610cb5c89e77e624b57ab5ead43ef499c6692242830fdb5d714363910ac9</code></td></tr>
+              <tr><td>Worker image</td><td><code>temporal-lakebase-agentworkflow-worker:20260712-a91e17b3d04a</code></td><td><code>sha256:e87beb35838ac2c21d971c49570cb71fae8f5b3b94843c2df7ea3c8bbeeacab2</code></td></tr>
+              <tr><td>Runtime identity</td><td><code>lakebase-agentworkflow-eks</code></td><td>OAuth M2M; project <code>CAN_USE</code>; matching non-superuser Postgres role</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="why">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Technology decisions</p>
+            <h2>Why Temporal. Why Lakebase.</h2>
+          </div>
+          <p class="section-intro">Neither product is used as a decorative dependency. Each solves a different failure mode in the end-to-end system.</p>
+        </div>
+
+        <div class="decision-grid">
+          <article class="decision temporal">
+            <p class="decision-kicker">Orchestration choice</p>
+            <h3>Temporal makes progress durable.</h3>
+            <p>Loan underwriting spans retries, external calls, process failure, and an unpredictable human wait. A normal queue plus database flags would recreate workflow semantics in application code.</p>
+            <ul>
+              <li>Completed activities survive a hard worker failure.</li>
+              <li>Retries are policy-driven and observable, not hidden loops.</li>
+              <li>Signals resume the same deterministic execution after review.</li>
+              <li>Worker versioning keeps pinned workflows compatible during rollout.</li>
+            </ul>
+          </article>
+          <article class="decision lakebase">
+            <p class="decision-kicker">Data platform choice</p>
+            <h3>Lakebase closes the governed loop.</h3>
+            <p>The UI needs ordinary indexed Postgres state, but the policy is governed in Unity Catalog and the reviewed outcome belongs back in Delta for audit and analytics.</p>
+            <ul>
+              <li>Synced tables bring governed policy down to OLTP reads.</li>
+              <li>Standard Postgres serves the live run and review interface.</li>
+              <li>Databricks OAuth connects off-platform EKS workloads.</li>
+              <li>CDF can carry operational history back into Unity Catalog.</li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 style="margin:3rem 0 0.7rem;font-size:clamp(1.7rem,3vw,2.5rem);letter-spacing:-0.04em">The fair comparison with Neon and other Postgres services</h3>
+        <p class="section-intro" style="max-width:76ch">Neon is a credible serverless Postgres alternative with branching, autoscaling, scale-to-zero, and read replicas. Those database primitives are not the Lakebase claim. The differentiator here is who owns the two governed data paths around Postgres.</p>
+
+        <div class="comparison-wrap" role="region" aria-label="Lakebase and external Postgres comparison" tabindex="0">
+          <table>
+            <thead>
+              <tr><th scope="col">Capability used by this demo</th><th scope="col">Lakebase</th><th scope="col">Neon / external Postgres</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Low-latency Postgres application state</td><td><span class="yes">Native</span></td><td><span class="yes">Native</span></td></tr>
+              <tr><td>Autoscaling, idle suspension, branching</td><td><span class="yes">Native</span></td><td><span class="yes">Available in Neon</span>; varies by provider</td></tr>
+              <tr><td>Unity Catalog policy served as managed Postgres table</td><td><span class="yes">Managed synced table</span></td><td><span class="build-it">Select and operate</span> replication or reverse ETL</td></tr>
+              <tr><td>Postgres changes written as Unity Catalog Delta history</td><td><span class="yes">Lakebase CDF</span> (Public Preview)</td><td><span class="build-it">Select and operate</span> CDC or ETL</td></tr>
+              <tr><td>Durable retries, crash recovery, human wait</td><td>Temporal—not the database</td><td>Temporal—not the database</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="fairness-note"><strong>Decision boundary:</strong> if the application has no meaningful Databricks data gravity, compare providers on normal database criteria such as performance, regions, extensions, cost, and operations. Lakebase wins this demo because governed data must move from Unity Catalog into the app and reviewed evidence must move back—not because competitors are incapable Postgres platforms.</p>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Deployment proof</p>
+            <h2>Evidence, not architecture theater.</h2>
+          </div>
+          <p class="section-intro">The smoke run ties the runtime and data stories together: Temporal reports a live durable wait; Lakebase reports the same execution, its evidence, and the exact policy source used.</p>
+        </div>
+
+        <div class="evidence-layout">
+          <article class="evidence-card">
+            <h3>Validation completed</h3>
+            <ul class="evidence-list">
+              <li><span class="check" aria-hidden="true"></span><span><strong>19 Python tests</strong><br>Workflow, API, activities, and worker runtime behavior.</span></li>
+              <li><span class="check" aria-hidden="true"></span><span><strong>React production build</strong><br>Static frontend bundled into the web image.</span></li>
+              <li><span class="check" aria-hidden="true"></span><span><strong>Helm lint and render</strong><br>Plus Kubernetes server-side dry run.</span></li>
+              <li><span class="check" aria-hidden="true"></span><span><strong>amd64 container builds</strong><br>Web and worker artifacts pushed by immutable tag.</span></li>
+              <li><span class="check" aria-hidden="true"></span><span><strong>Live API and workflow smoke</strong><br>Run state, metrics, review gate, and policy provenance checked.</span></li>
+            </ul>
+          </article>
+
+          <article class="proof" aria-label="Live smoke workflow evidence">
+            <div class="proof-bar"><span class="proof-dot"></span><span class="proof-dot"></span><span class="proof-dot"></span><span class="proof-title">LIVE SMOKE EVIDENCE</span></div>
+            <dl>
+              <dt>Workflow</dt><dd><span class="mono">LoanUnderwritingWorkflow</span></dd>
+              <dt>Workflow ID</dt><dd><span class="mono">lakebase-agent-37396a21-c6bd-4a0c-8a3a-96ce063609a8</span></dd>
+              <dt>Temporal run</dt><dd><span class="mono">019f582e-115e-715e-b599-72f7e48ebc50</span></dd>
+              <dt>Lakebase run</dt><dd><span class="mono">37396a21-c6bd-4a0c-8a3a-96ce063609a8</span></dd>
+              <dt>State</dt><dd class="highlight">AWAITING_REVIEW</dd>
+              <dt>Policy result</dt><dd>refer</dd>
+              <dt>Policy provenance</dt><dd class="highlight"><span class="mono">lakebase_synced_table</span></dd>
+              <dt>Tool activities</dt><dd>credit · income · DTI · policy</dd>
+              <dt>Telemetry</dt><dd>810 scripted tokens · 0 activity retries</dd>
+            </dl>
+          </article>
+        </div>
+
+        <div class="security-band">
+          <div>
+            <p class="eyebrow" style="color:#1f579c">Least privilege</p>
+            <h3>The runtime can operate the app. It cannot administer the platform.</h3>
+            <p>The Kubernetes secret injects OAuth material at runtime; values are absent from source and Helm configuration. The Lakebase role has no superuser, database creation, role creation, or row-level-security bypass attributes.</p>
+          </div>
+          <ul class="permission-list">
+            <li><b>Databricks project:</b> <code>CAN_USE</code> only</li>
+            <li><b>agent_ops:</b> schema use; table select/insert/update; sequence use</li>
+            <li><b>agent_policy:</b> schema use; select one synced policy table</li>
+            <li><b>Explicitly absent:</b> delete, schema creation, UC administration, project management, synced-table administration</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="scope">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Delivery boundary</p>
+            <h2>Done, scoped, and still pending.</h2>
+          </div>
+          <p class="section-intro">A credible implementation record says what was intentionally excluded and what remains before calling the design fully productionized.</p>
+        </div>
+
+        <div class="scope-columns">
+          <article class="scope-card complete">
+            <h3>Completed</h3>
+            <p class="scope-label">Running and verified</p>
+            <ul>
+              <li>Unity Catalog storage and governed policy source</li>
+              <li>Lakebase project, branch, migration, and continuous policy sync</li>
+              <li>ECR images and Helm release on EKS</li>
+              <li>Worker Controller rollout, HPA, and PDB</li>
+              <li>OAuth identity and scoped Postgres grants</li>
+              <li>Live smoke workflow at human review</li>
+            </ul>
+          </article>
+          <article class="scope-card scoped">
+            <h3>Intentionally scoped</h3>
+            <p class="scope-label">Safe demo defaults</p>
+            <ul>
+              <li>The web service is private <code>ClusterIP</code>, reached by loopback port-forward.</li>
+              <li>A single dedicated runtime service principal minimizes demo credential surface; split API and worker identities for stronger production isolation.</li>
+              <li>The smoke workflow remains waiting so the live review path can be demonstrated.</li>
+              <li>Scripted model behavior keeps the proof repeatable; the activity boundary supports a configured model provider.</li>
+            </ul>
+          </article>
+          <article class="scope-card pending">
+            <h3>Pending</h3>
+            <p class="scope-label">Not represented as complete</p>
+            <ul>
+              <li>Enable Public Preview Lakebase Change Data Feed for <code>agent_ops</code>.</li>
+              <li>Verify <code>lb_agent_runs_history</code> and <code>lb_agent_review_decisions_history</code> in Unity Catalog.</li>
+              <li>Add an authenticated ingress or load balancer only if non-local access is required.</li>
+              <li>Production hardening may include identity split, network policy, alerting, SLOs, backups, and regional latency review.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="next">
+      <div class="shell">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Close the last mile</p>
+            <h2>Three remaining actions.</h2>
+          </div>
+          <p class="section-intro">The demo already proves the inbound policy path. These steps finish the human decision and outbound audit path without expanding the public attack surface.</p>
+        </div>
+
+        <div>
+          <article class="next-step"><span class="step-number">1</span><div><h3>Submit the waiting review</h3><p>Use the documented loopback port-forward, open the deployed UI, and approve, deny, or request more information for the smoke run.</p></div></article>
+          <article class="next-step"><span class="step-number">2</span><div><h3>Enable Lakebase Change Data Feed</h3><p>Map source schema <code>agent_ops</code> to <code>agentworkflow_lakehouse.agent_ops</code> from the production branch UI. CDF is a Public Preview feature and should be qualified accordingly.</p></div></article>
+          <article class="next-step"><span class="step-number">3</span><div><h3>Verify Delta change history</h3><p>Confirm the pending row and completed review appear as insert, update preimage, and update postimage events in the generated <code>lb_&lt;table&gt;_history</code> tables.</p></div></article>
+        </div>
+      </div>
+    </section>
+
+    <div class="shell">
+      <aside class="closing">
+        <strong>Progress survives. Policy stays governed. Decisions stay visible.</strong>
+        <p>That is the completed implementation thesis: Temporal and Lakebase solve different problems, and their boundary is what makes the system both durable and operationally useful.</p>
+      </aside>
+    </div>
+  </main>
+
+  <footer>
+    <div class="shell footer-row">
+      <p><strong>Temporal Lakebase AgentWorkflow</strong><br>Implementation record · 12 July 2026</p>
+      <p>Technical source of truth: <a href="setup_status.md">setup status</a> · <a href="why_temporal_and_lakebase.md">product rationale</a></p>
+    </div>
+  </footer>
+</body>
+</html>

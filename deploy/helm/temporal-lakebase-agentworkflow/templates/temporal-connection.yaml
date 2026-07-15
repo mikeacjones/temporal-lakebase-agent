@@ -1,0 +1,12 @@
+apiVersion: temporal.io/v1alpha1
+kind: Connection
+metadata:
+  name: {{ include "loan-agent.temporalConnectionName" . }}
+  labels:
+    {{- include "loan-agent.labels" . | nindent 4 }}
+spec:
+  hostPort: {{ .Values.temporal.address | quote }}
+  apiKeySecretRef:
+    name: {{ .Values.secrets.existingName }}
+    key: {{ .Values.secrets.keys.temporalApiKey }}
+

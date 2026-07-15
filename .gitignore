@@ -1,0 +1,14 @@
+.env
+.DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+dist/
+build/
+node_modules/
+web/dist/
+.playwright-cli/
+*.tsbuildinfo
+*.egg-info/
+lakebase_agentworkflow.egg-info/

@@ -1,0 +1,124 @@
+apiVersion: temporal.io/v1alpha1
+kind: WorkerDeployment
+metadata:
+  name: {{ include "loan-agent.workerName" . }}
+  labels:
+    {{- include "loan-agent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  workerOptions:
+    connectionRef:
+      name: {{ include "loan-agent.temporalConnectionName" . }}
+    temporalNamespace: {{ .Values.temporal.namespace | quote }}
+  rollout:
+    strategy: {{ .Values.worker.rollout.strategy }}
+    steps:
+      {{- toYaml .Values.worker.rollout.steps | nindent 6 }}
+  sunset:
+    scaledownDelay: {{ .Values.worker.sunset.scaledownDelay }}
+    deleteDelay: {{ .Values.worker.sunset.deleteDelay }}
+  template:
+    metadata:
+      labels:
+        {{- include "loan-agent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "loan-agent.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "loan-agent.fullname" . }}
+          env:
+            - name: TEMPORAL_WORKER_DEFAULT_VERSIONING_BEHAVIOR
+              value: {{ .Values.worker.defaultVersioningBehavior | quote }}
+            - name: TEMPORAL_WORKER_READY_FILE
+              value: /tmp/temporal-worker-ready
+            - name: TEMPORAL_WORKER_ACTIVITY_EXECUTOR_MAX_WORKERS
+              value: {{ .Values.worker.concurrency.activityExecutorMaxWorkers | quote }}
+            - name: TEMPORAL_WORKER_MAX_CACHED_WORKFLOWS
+              value: {{ .Values.worker.concurrency.maxCachedWorkflows | quote }}
+            - name: TEMPORAL_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS
+              value: {{ .Values.worker.concurrency.maxConcurrentWorkflowTasks | quote }}
+            - name: TEMPORAL_WORKER_MAX_CONCURRENT_ACTIVITIES
+              value: {{ .Values.worker.concurrency.maxConcurrentActivities | quote }}
+            - name: TEMPORAL_WORKER_MAX_CONCURRENT_LOCAL_ACTIVITIES
+              value: {{ .Values.worker.concurrency.maxConcurrentLocalActivities | quote }}
+            - name: TEMPORAL_WORKER_MAX_CONCURRENT_WORKFLOW_TASK_POLLS
+              value: {{ .Values.worker.concurrency.maxConcurrentWorkflowTaskPolls | quote }}
+            - name: TEMPORAL_WORKER_MAX_CONCURRENT_ACTIVITY_TASK_POLLS
+              value: {{ .Values.worker.concurrency.maxConcurrentActivityTaskPolls | quote }}
+            - name: TEMPORAL_WORKER_GRACEFUL_SHUTDOWN_SECONDS
+              value: {{ .Values.worker.concurrency.gracefulShutdownSeconds | quote }}
+            {{- if .Values.worker.concurrency.maxActivitiesPerSecond }}
+            - name: TEMPORAL_WORKER_MAX_ACTIVITIES_PER_SECOND
+              value: {{ .Values.worker.concurrency.maxActivitiesPerSecond | quote }}
+            {{- end }}
+            {{- if .Values.worker.concurrency.maxTaskQueueActivitiesPerSecond }}
+            - name: TEMPORAL_WORKER_MAX_TASK_QUEUE_ACTIVITIES_PER_SECOND
+              value: {{ .Values.worker.concurrency.maxTaskQueueActivitiesPerSecond | quote }}
+            {{- end }}
+            {{- include "loan-agent.databaseSecretEnv" . | nindent 12 }}
+            {{- if eq .Values.model.provider "openai" }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingName }}
+                  key: {{ .Values.secrets.keys.openaiApiKey }}
+            {{- end }}
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "test -f /tmp/temporal-worker-ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "kill -0 1"]
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.worker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+

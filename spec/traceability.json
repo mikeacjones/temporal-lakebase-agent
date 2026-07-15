@@ -1,0 +1,96 @@
+{
+  "entries": [
+    {
+      "claim": "The UI sends signals to Temporal to interact with running workflows.",
+      "classification": "explicit_source",
+      "source_artifact_ids": [
+        "source_spec.edge_ui_to_temporal_cloud",
+        "source_spec.label_signal"
+      ],
+      "implemented_by": [
+        "src/lakebase_agentworkflow/workflows.py::LakebaseAgentWorkflow.add_user_message",
+        "src/lakebase_agentworkflow/workflows.py::LakebaseAgentWorkflow.request_cancel"
+      ]
+    },
+    {
+      "claim": "AgentWorkflows are executed by a Temporal Worker.",
+      "classification": "explicit_source",
+      "source_artifact_ids": [
+        "source_spec.group_agent_workflows"
+      ],
+      "implemented_by": [
+        "src/lakebase_agentworkflow/worker.py",
+        "src/lakebase_agentworkflow/workflows.py"
+      ]
+    },
+    {
+      "claim": "The workflow models the agentic loop and activities call the model and tools.",
+      "classification": "user_requirement",
+      "source_artifact_ids": [
+        "user_request.agentworkflow_temporal_native_agent"
+      ],
+      "implemented_by": [
+        "src/lakebase_agentworkflow/workflows.py::LakebaseAgentWorkflow.run",
+        "src/lakebase_agentworkflow/activities.py::call_model",
+        "src/lakebase_agentworkflow/activities.py::execute_tool"
+      ]
+    },
+    {
+      "claim": "Lakebase provides operational state for UI polling, notifications, and audit logging.",
+      "classification": "explicit_source",
+      "source_artifact_ids": [
+        "source_spec.node_lakebase",
+        "source_spec.edge_ui_to_lakebase",
+        "source_spec.edge_notification_to_lakebase",
+        "source_spec.edge_audit_to_lakebase"
+      ],
+      "implemented_by": [
+        "sql/001_agent_ops_schema.sql",
+        "src/lakebase_agentworkflow/activities.py",
+        "src/lakebase_agentworkflow/helpers/lakebase.py"
+      ]
+    },
+    {
+      "claim": "Lakebase captures operational changes in Unity Catalog through Lakebase Change Data Feed, not an implicit always-on flush.",
+      "classification": "corrected_inference",
+      "source_artifact_ids": [
+        "source_spec.edge_lakebase_to_unity_catalog",
+        "databricks_lakebase_skill.lakehouse_sync"
+      ],
+      "implemented_by": [
+        "docs/architecture.md",
+        "docs/databricks_lakebase_setup.md",
+        "sql/001_agent_ops_schema.sql"
+      ]
+    },
+    {
+      "claim": "Model client retries are disabled and Temporal owns retry behavior.",
+      "classification": "best_practice",
+      "source_artifact_ids": [
+        "temporal_skill.ai_patterns"
+      ],
+      "implemented_by": [
+        "src/lakebase_agentworkflow/activities.py::_call_openai",
+        "src/lakebase_agentworkflow/workflows.py"
+      ]
+    },
+    {
+      "claim": "Lakebase connections use SSL and short-lived database credentials generated with off-platform Databricks OAuth service principals from the EKS runtime.",
+      "classification": "best_practice",
+      "source_artifact_ids": [
+        "databricks_lakebase_skill.connectivity"
+      ],
+      "implemented_by": [
+        "src/lakebase_agentworkflow/helpers/lakebase.py::LakebaseRepository._conninfo",
+        "config/example.env",
+        "docs/databricks_lakebase_setup.md"
+      ]
+    }
+  ],
+  "uncovered_claims": [
+    "The production identity model for user_id is not selected.",
+    "Peak workflow start rate, signal rate, and worker sizing are not yet quantified.",
+    "Retention and access policies for the selected Lakebase CDF destination remain to be finalized.",
+    "The final UI access pattern is not selected: direct Postgres, Lakebase Data API, or API service."
+  ]
+}

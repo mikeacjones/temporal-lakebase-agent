@@ -1,0 +1,7 @@
+apiVersion: v2
+name: temporal-lakebase-agentworkflow
+description: EKS runtime for the Temporal loan-underwriting worker and Lakebase-backed web API
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

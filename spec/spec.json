@@ -1,0 +1,188 @@
+{
+  "title": "AgentWorkflow Lakebase Architecture Specification",
+  "objective": "Build a Temporal-native loan-underwriting agent where the workflow models the agentic loop and durable human-review gate while Databricks Lakebase stores operational state for UI polling, audit, notifications, and downstream Unity Catalog analytics.",
+  "selected_agent_functionality": {
+    "name": "Personal Loan Underwriting Agent",
+    "description": "An agent that loads applicant credit and income signals, calculates DTI, evaluates governed policy, recommends approve, decline, or refer, and durably awaits a human review decision.",
+    "rationale": "Fixture-backed external signals keep the focus on Temporal durable orchestration, Lakebase operational persistence, human review, and the governed Unity Catalog round trip."
+  },
+  "scope": [
+    "Temporal workflow for the agent loop.",
+    "Activities for model calls, tool execution, Lakebase reads, and Lakebase writes.",
+    "UI signaling into Temporal and UI polling from Lakebase.",
+    "Lakebase operational schema for runs, messages, tools, reviews, events, notes, and notifications.",
+    "Durable human review signaling for approve, deny, and request-more-information actions.",
+    "Unity Catalog governed policy synced into Lakebase for low-latency lookup.",
+    "Lakebase Change Data Feed from Lakebase Postgres into Unity Catalog for analytics, GDPR, RLHF, and annotation workflows."
+  ],
+  "non_goals": [
+    "Production credit bureau, income-verification provider, or loan-origination integration.",
+    "Replacing Temporal history with Lakebase.",
+    "Running analytical joins or aggregations inside Lakebase."
+  ],
+  "components": [
+    {
+      "name": "User Interface",
+      "responsibilities": [
+        "Start workflows.",
+        "Send add_user_message, submit_review_decision, and request_cancel signals.",
+        "Poll Lakebase tables or the Lakebase Data API for run state."
+      ]
+    },
+    {
+      "name": "Temporal Cloud or Dev Server",
+      "responsibilities": [
+        "Persist workflow event histories.",
+        "Schedule workflow and activity tasks.",
+        "Apply retry and timeout policies."
+      ]
+    },
+    {
+      "name": "LakebaseAgentWorkflow",
+      "responsibilities": [
+        "Own deterministic agent state.",
+        "Model the agentic loop.",
+        "Buffer user signals.",
+        "Schedule model, tool, and Lakebase activities."
+      ]
+    },
+    {
+      "name": "Model Activity",
+      "responsibilities": [
+        "Call the configured model provider with client retries disabled.",
+        "Return structured ModelDecision objects.",
+        "Classify retryable and non-retryable model errors."
+      ]
+    },
+    {
+      "name": "Tool Activity",
+      "responsibilities": [
+        "Execute credit, income, DTI, policy, and note tools.",
+        "Return structured ToolResult objects.",
+        "Keep external and fallible work outside workflow code."
+      ]
+    },
+    {
+      "name": "Lakebase Activities",
+      "responsibilities": [
+        "Persist run, message, tool, review, event, notification, and note records.",
+        "Load recent context for the agent.",
+        "Use SSL and short-lived Lakebase credentials generated with off-platform Databricks OAuth service principals from the EKS runtime."
+      ]
+    },
+    {
+      "name": "Databricks Lakebase",
+      "responsibilities": [
+        "Provide serverless Postgres operational storage.",
+        "Serve low-latency UI, notification, and audit reads.",
+        "Support Data API exposure where appropriate."
+      ]
+    },
+    {
+      "name": "Unity Catalog",
+      "responsibilities": [
+        "Receive append-only operational change history through Lakebase CDF.",
+        "Support downstream GDPR, RLHF, and annotation workflows.",
+        "Own the governed underwriting policy that is synced into Lakebase for OLTP access."
+      ]
+    }
+  ],
+  "execution_flow": [
+    "A caller starts LakebaseAgentWorkflow with AgentRequest.",
+    "The workflow records run_started through a Lakebase activity.",
+    "The workflow loads recent user notes from Lakebase through an activity.",
+    "The workflow calls the model activity with the current messages and available tool schemas.",
+    "If the model returns tool calls, the workflow schedules tool activities.",
+    "The workflow records each assistant message, tool result, and audit event through Lakebase activities.",
+    "When the model returns a structured recommendation, the workflow records it and waits in AWAITING_REVIEW.",
+    "A submit_review_decision signal approves, denies, or requests more information and resumes the workflow.",
+    "The workflow records final state in Lakebase and returns AgentResult.",
+    "The UI, notification service, and audit view poll Lakebase tables or the Data API.",
+    "Lakebase CDF captures the Lakebase operational schema in agentworkflow_lakehouse.agent_ops as Delta lb_<table>_history event tables after it is enabled in the Lakebase UI.",
+    "A Lakebase synced table materializes agentworkflow_lakehouse.governed.underwriting_policy_limits as agent_policy.underwriting_policy_limits."
+  ],
+  "data_contracts": [
+    {
+      "name": "AgentRequest",
+      "fields": {
+        "run_id": "string",
+        "user_id": "string",
+        "user_request": "string",
+        "applicant_id": "string",
+        "loan_amount": "positive number",
+        "loan_purpose": "string",
+        "model": "string",
+        "max_turns": "integer",
+        "metadata": "object"
+      }
+    },
+    {
+      "name": "ModelDecision",
+      "fields": {
+        "assistant_message": "string",
+        "final": "boolean",
+        "tool_calls": "array<ToolCall>",
+        "usage": "TokenUsage",
+        "metadata": "object"
+      }
+    },
+    {
+      "name": "ToolResult",
+      "fields": {
+        "tool_call_id": "string",
+        "name": "string",
+        "success": "boolean",
+        "content": "string",
+        "data": "object",
+        "error": "optional string"
+      }
+    }
+  ],
+  "lakebase_schema": [
+    "agent_runs",
+    "agent_messages",
+    "agent_tool_calls",
+    "agent_events",
+    "agent_notifications",
+    "agent_notes",
+    "agent_review_decisions",
+    "agent_workflow_metrics",
+    "agent_turn_metrics",
+    "agent_activity_attempt_metrics"
+  ],
+  "retry_and_timeout_policy": {
+    "model_activity": {
+      "start_to_close": "30s",
+      "schedule_to_close": "3m",
+      "max_attempts": 4
+    },
+    "tool_activity": {
+      "start_to_close": "60s",
+      "schedule_to_close": "2m",
+      "max_attempts": 3
+    },
+    "lakebase_activities": {
+      "start_to_close": "15s",
+      "max_attempts": 5
+    }
+  },
+  "assumptions": [
+    "Temporal remains the durable execution source of truth.",
+    "Lakebase is the app-facing operational projection.",
+    "Lakebase Change Data Feed is a Public Preview feature enabled manually in the Lakebase UI.",
+    "The governed policy Delta table has Change Data Feed enabled and is served from the read-only agent_policy Lakebase schema.",
+    "The default local mode uses a scripted model provider and disabled Lakebase writes for validation."
+  ],
+  "open_questions": [
+    "Which identity provider and user IDs should be stored in user_id?",
+    "What peak workflow start rate and signal rate should the task queue support?",
+    "What is the maximum expected workflow duration?",
+    "What payload size limits should be enforced before data is written to Lakebase?",
+    "Should the UI poll Postgres directly, use the Lakebase Data API, or use an API service over Lakebase?",
+    "What is the workflow versioning plan once long-running executions exist?",
+    "Are Temporal Search Attributes required beyond visibility and debugging?",
+    "Should high-volume notification dispatch be a separate workflow or only a Lakebase-driven service?",
+    "Which reviewer identity and authorization claims must be retained for compliance?",
+    "What policy-change propagation SLA is required between Unity Catalog and Lakebase?"
+  ]
+}

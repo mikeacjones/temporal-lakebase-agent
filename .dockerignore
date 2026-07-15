@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.venv
+.pytest_cache
+.playwright-cli
+__pycache__
+*.pyc
+*.egg-info
+build
+dist
+node_modules
+web/node_modules
+web/dist
+web/*.tsbuildinfo
+
