@@ -9,6 +9,8 @@ build/
 node_modules/
 web/dist/
 .playwright-cli/
+output/
 *.tsbuildinfo
 *.egg-info/
 lakebase_agentworkflow.egg-info/
+spec/

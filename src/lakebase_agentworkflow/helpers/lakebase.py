@@ -968,9 +968,14 @@ class LakebaseRepository:
             if not host:
                 raise RuntimeError("Lakebase endpoint response did not include status.hosts.host")
 
-            username = os.getenv("LAKEBASE_USER") or _nested_value(
-                workspace.current_user.me(),
-                "user_name",
+            username = (
+                os.getenv("LAKEBASE_USER")
+                or os.getenv("PGUSER")
+                or os.getenv("DATABRICKS_CLIENT_ID")
+                or _nested_value(
+                    workspace.current_user.me(),
+                    "user_name",
+                )
             )
             if not username:
                 raise RuntimeError("Unable to determine Databricks current user; set LAKEBASE_USER")

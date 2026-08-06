@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchRuns, startWorkflow, submitReview } from "./api";
+import { fetchRuns, fetchRuntimeConfig, startWorkflow, submitReview } from "./api";
 import { OpsDashboard } from "./components/OpsDashboard";
 import { ReviewAudit, ReviewPanel, recommendationForRun } from "./components/ReviewPanel";
 import { RunCard } from "./components/RunCard";
 import { TemporalLogo, TemporalMark } from "./components/TemporalLogo";
-import type { ReviewDecisionPayload, StartWorkflowRequest, WorkflowRun } from "./types";
+import type {
+  ReviewDecisionPayload,
+  RuntimeConfig,
+  StartWorkflowRequest,
+  WorkflowRun,
+} from "./types";
 
 type View = "underwriting" | "ops";
 
@@ -110,6 +115,10 @@ export default function App() {
   const [starting, setStarting] = useState(false);
   const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({
+    temporal_ui_url: "http://localhost:8233",
+    temporal_namespace: "default",
+  });
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const selectedRun = useMemo(
@@ -128,6 +137,18 @@ export default function App() {
     const onHashChange = () => setViewState(initialView());
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRuntimeConfig()
+      .then((config) => {
+        if (!cancelled) setRuntimeConfig(config);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -283,6 +304,8 @@ export default function App() {
                     key={run.run_id}
                     run={run}
                     selected={selectedRun?.run_id === run.run_id}
+                    temporalUiUrl={runtimeConfig.temporal_ui_url}
+                    temporalNamespace={runtimeConfig.temporal_namespace}
                     onSelect={(nextRun) => setSelectedRunId(nextRun.run_id)}
                   />
                 ))}

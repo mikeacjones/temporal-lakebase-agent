@@ -93,6 +93,11 @@ export interface ReviewSubmissionResponse {
   decision: ReviewDecision;
 }
 
+export interface RuntimeConfig {
+  temporal_ui_url: string;
+  temporal_namespace: string;
+}
+
 export interface RunMetrics {
   total_runs: number;
   completed_runs: number;

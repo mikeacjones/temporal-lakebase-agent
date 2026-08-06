@@ -48,9 +48,9 @@ The schema intentionally separates:
 - Operational metrics: `agent_workflow_metrics`, `agent_turn_metrics`, and `agent_activity_attempt_metrics`.
 - Retry summaries: `agent_activity_retry_counts`, grouped by workflow and activity type.
 
-## Configure The Off-Platform Runtime
+## Configure The tmprl-demo.cloud Runtime
 
-The production web/API runs as an EKS Kubernetes Deployment. The standalone worker runs on EKS under a Temporal Worker Controller `WorkerDeployment`, which creates versioned Kubernetes Deployments and can attach per-version autoscaling through a `WorkerResourceTemplate`. Databricks supplies the Lakebase/Unity Catalog data plane; it does not host either application process.
+The production web/API and versioned Temporal worker run in the tmprl-demo.cloud Kubernetes environment. The central registry builds the repository's two Dockerfiles, supplies the standard Temporal environment variables, and reconciles the worker through Temporal Worker Controller. Databricks supplies the Lakebase/Unity Catalog data plane; it does not host either application process.
 
 Configure each workload with a Databricks OAuth machine-to-machine service principal and Lakebase endpoint mode:
 
@@ -62,12 +62,13 @@ DATABRICKS_CLIENT_SECRET=<SERVICE_PRINCIPAL_CLIENT_SECRET>
 LAKEBASE_CONNECTION_MODE=endpoint
 LAKEBASE_ENDPOINT=projects/temporal-lakebase-agentworkflow/branches/production/endpoints/primary
 LAKEBASE_DATABASE=databricks_postgres
+# Optional; defaults to DATABRICKS_CLIENT_ID.
 LAKEBASE_USER=<SERVICE_PRINCIPAL_CLIENT_ID>
 LAKEBASE_SCHEMA=agent_ops
 LAKEBASE_POLICY_SCHEMA=agent_policy
 ```
 
-The Databricks SDK uses these credentials to resolve the endpoint and generate short-lived Lakebase database credentials. Inject client secrets through Kubernetes Secrets or an external secret manager, keep `sslmode=require`, refresh tokens before expiry, and recycle stale pooled connections. Prefer separate worker and API identities: the worker needs `agent_ops` DML and `agent_policy` read access, while the API should normally have read-only access to the UI and metric tables. The operator that manages Unity Catalog, synced tables, and CDF should be a separate privileged identity.
+The Databricks SDK uses these credentials to resolve the endpoint and generate short-lived Lakebase database credentials. Store the four required values in `tmprl-dem-cld/lakebase-agent/lakebase`; the registry mirrors that JSON secret into both components. Keep `sslmode=require` and recycle pooled connections before token expiry. Separate worker and API identities are a later least-privilege hardening option; the registry manifest currently uses one demo identity to keep onboarding concise. The operator that manages Unity Catalog, synced tables, and CDF should remain a separate privileged identity.
 
 For local development, the same endpoint mode may use an explicitly selected interactive Databricks SDK/CLI credential source. As a manual local fallback, use a full Postgres URL:
 

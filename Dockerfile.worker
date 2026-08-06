@@ -1,9 +1,15 @@
 ARG PYTHON_VERSION=3.12
+ARG UV_VERSION=0.11.14
 FROM python:${PYTHON_VERSION}-slim
+ARG UV_VERSION
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    PATH=/app/.venv/bin:$PATH \
     TEMPORAL_WORKER_READY_FILE=/tmp/temporal-worker-ready
 
 WORKDIR /app
@@ -11,9 +17,12 @@ WORKDIR /app
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home --shell /usr/sbin/nologin app
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir ".[lakebase]"
+RUN pip install --no-cache-dir "uv==${UV_VERSION}" \
+    && uv sync --frozen --no-dev --extra lakebase --no-editable \
+    && pip uninstall --yes uv \
+    && rm -rf /root/.cache/uv
 
 USER 10001:10001
 
@@ -21,4 +30,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
   CMD ["python", "-c", "from pathlib import Path; raise SystemExit(0 if Path('/tmp/temporal-worker-ready').is_file() else 1)"]
 
 CMD ["python", "-m", "lakebase_agentworkflow.worker"]
-

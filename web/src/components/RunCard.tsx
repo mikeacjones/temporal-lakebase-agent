@@ -1,9 +1,6 @@
 import type { WorkflowRun } from "../types";
 import { TemporalMark } from "./TemporalLogo";
 
-const TEMPORAL_UI = import.meta.env.VITE_TEMPORAL_UI ?? "http://localhost:8233";
-const TEMPORAL_NAMESPACE = import.meta.env.VITE_TEMPORAL_NAMESPACE ?? "default";
-
 const STATUS_LABEL: Record<WorkflowRun["status"], string> = {
   pending: "Pending",
   running: "Running",
@@ -24,11 +21,19 @@ function formatTime(value: string): string {
 interface RunCardProps {
   run: WorkflowRun;
   selected: boolean;
+  temporalUiUrl: string;
+  temporalNamespace: string;
   onSelect: (run: WorkflowRun) => void;
 }
 
-export function RunCard({ run, selected, onSelect }: RunCardProps) {
-  const workflowUrl = `${TEMPORAL_UI}/namespaces/${encodeURIComponent(TEMPORAL_NAMESPACE)}/workflows/${encodeURIComponent(run.workflow_id)}`;
+export function RunCard({
+  run,
+  selected,
+  temporalUiUrl,
+  temporalNamespace,
+  onSelect,
+}: RunCardProps) {
+  const workflowUrl = `${temporalUiUrl}/namespaces/${encodeURIComponent(temporalNamespace)}/workflows/${encodeURIComponent(run.workflow_id)}`;
   const applicantId =
     typeof run.metadata?.applicant_id === "string" ? run.metadata.applicant_id : null;
 

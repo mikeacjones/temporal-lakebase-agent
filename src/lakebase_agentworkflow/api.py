@@ -42,6 +42,17 @@ class ReviewSubmissionResponse(BaseModel):
     decision: ReviewDecision
 
 
+class RuntimeConfigResponse(BaseModel):
+    temporal_ui_url: str
+    temporal_namespace: str
+
+
+class ReadinessResponse(BaseModel):
+    status: str
+    lakebase: str
+    temporal: str
+
+
 class RunMetricsResponse(BaseModel):
     total_runs: int = Field(ge=0)
     completed_runs: int = Field(ge=0)
@@ -85,6 +96,40 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/ready", response_model=ReadinessResponse)
+async def readiness() -> ReadinessResponse:
+    try:
+        get_repository().list_runs(limit=1)
+    except Exception as exc:
+        logger.exception("Lakebase readiness check failed")
+        raise HTTPException(status_code=503, detail="Lakebase is not ready") from exc
+
+    try:
+        client = await connect_temporal()
+        temporal_healthy = await client.service_client.check_health()
+        if not temporal_healthy:
+            raise RuntimeError("Temporal health check returned unhealthy")
+    except Exception as exc:
+        logger.exception("Temporal readiness check failed")
+        raise HTTPException(status_code=503, detail="Temporal is not ready") from exc
+
+    return ReadinessResponse(
+        status="ready",
+        lakebase="ready",
+        temporal="ready",
+    )
+
+
+@app.get("/api/runtime-config", response_model=RuntimeConfigResponse)
+def runtime_config() -> RuntimeConfigResponse:
+    return RuntimeConfigResponse(
+        temporal_ui_url=(
+            os.getenv("TEMPORAL_UI_URL", "http://localhost:8233").rstrip("/")
+        ),
+        temporal_namespace=os.getenv("TEMPORAL_NAMESPACE", "default"),
+    )
 
 
 @app.get("/api/runs", response_model=WorkflowRunListResponse)
