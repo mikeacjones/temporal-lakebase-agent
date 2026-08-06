@@ -20,6 +20,10 @@ spec:
       score: 4
       maxScore: 5
       note: Application-ready; Lakebase schema, policy sync, and OAuth secret are operator prerequisites.
+    crashable:
+      enabled: true
+      taskQueueEnv: TEMPORAL_TASK_QUEUE
+      baseTaskQueue: lakebase-agent-task-queue
     links:
       runbook:
         label: Deployment and demo guide
@@ -106,7 +110,7 @@ spec:
         - name: AGENT_MODEL_PROVIDER
           value: scripted
         - name: DEMO_TOOL_DELAY_SECONDS
-          value: "0"
+          value: "3"
       worker:
         versioning:
           enabled: true

@@ -43,6 +43,12 @@ Databricks is the Lakebase and Unity Catalog data plane; it is not the worker or
 
 Temporal Cloud is the production durable control plane between them. The Worker Controller's `Connection` references the Temporal Cloud API-key secret and injects `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_DEPLOYMENT_NAME`, and `TEMPORAL_WORKER_BUILD_ID`; the worker pod template must not set those four values manually. Lakebase remains the shared operational database, while Unity Catalog owns the governed policy source and Delta audit destination. This deployment boundary is independent of the Lakebase-versus-Neon argument: Lakebase is selected for its Databricks-native governed data paths, not because it hosts the application process.
 
+### Cloud crash-recovery experience
+
+The registry's crashable-workspace feature owns the hosted recovery demonstration. It clones the web and worker runtime into a temporary namespace, overrides `TEMPORAL_TASK_QUEUE` with a per-workspace queue, and force-deletes the workspace pods when the presenter selects **Crash Workers**. Kubernetes and Worker Controller recreate the processes, and the replacement worker resumes from Temporal history on the same isolated queue.
+
+No application component shells into another container or receives Kubernetes API credentials. The web/API already starts workflows on `TEMPORAL_TASK_QUEUE`, and the worker polls that same environment-driven value, so the registry can isolate each temporary experience without an application-side control endpoint.
+
 ### Off-platform Databricks authentication
 
 Each runtime component authenticates to Databricks with an OAuth machine-to-machine service principal supplied by the registry's project-scoped AWS Secrets Manager integration. In `endpoint` mode, the Databricks SDK uses `DATABRICKS_HOST`, `DATABRICKS_AUTH_TYPE=oauth-m2m`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`, and `LAKEBASE_ENDPOINT` to resolve the Postgres host and mint short-lived database credentials. `LAKEBASE_USER` can override the Postgres role; otherwise the runtime uses the service-principal client ID. Connections use `sslmode=require`, pooling, and pool recycling before OAuth token expiry.

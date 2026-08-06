@@ -28,13 +28,13 @@ flowchart LR
     Unity[Unity Catalog policy] --> Lakebase
 ```
 
-The web image serves both the React application and the FastAPI API on port `8000`. The worker image polls `lakebase-agent-task-queue`. Both images run as an unprivileged user and consume Temporal and Lakebase configuration at runtime.
+The web image serves both the React application and the FastAPI API on port `8000`. The worker image polls the task queue supplied through `TEMPORAL_TASK_QUEUE`. Both images run as an unprivileged user and consume Temporal and Lakebase configuration at runtime.
 
 ## Deploy with tmprl-demo.cloud
 
 The ready-to-review `DemoProject` resource is [deploy/tmprl-demo-cloud.yaml](deploy/tmprl-demo-cloud.yaml). The central [tmprl-demo-cloud-registry](https://github.com/temporal-sa/tmprl-demo-cloud-registry) builds both images, creates the Kubernetes and Temporal resources, injects Temporal API-key credentials, runs the `/ready` smoke check, and promotes the candidate.
 
-The application repository does not carry Kubernetes or Helm manifests. The registry owns those resources.
+The application repository does not carry Kubernetes or Helm manifests. The registry owns those resources, including the crashable demo environment. It creates an isolated task queue for each temporary environment and crashes pods through the registry operator; neither application container needs shell access or Kubernetes credentials.
 
 ### 1. Prepare Lakebase
 
@@ -87,13 +87,22 @@ Remove the branch override after the application change lands on `main`.
 
 The registry gates promotion on `GET /ready`. That check opens Lakebase, verifies the operational schema is queryable, and checks Temporal service health. `GET /health` remains a process-only health endpoint.
 
-After promotion:
+After promotion, verify the normal experience:
 
 1. Open `https://lakebase-agent.tmprl-demo.cloud` through the registry authentication flow.
 2. Start the borderline applicant scenario.
 3. Confirm all four tool activities complete and the workflow waits for review.
 4. Open the Temporal link beside the run; its namespace is supplied at runtime rather than baked into the image.
 5. Approve, deny, or request more information and verify the durable continuation.
+
+To demonstrate crash recovery without executing commands inside a container:
+
+1. From the registry catalog, create a **Crashable Environment** for this demo.
+2. Open the temporary environment and start the borderline applicant scenario.
+3. While the underwriting tools are running, return to the registry card and choose **Crash Workers**.
+4. Reopen or refresh the temporary app after its pods restart. The workflow continues on the environment's isolated task queue and retains its completed progress in Temporal.
+
+The hosted worker intentionally adds a short delay to each scripted underwriting tool so the crash can be triggered while work is in flight. The registry owns pod deletion and recovery; the app does not call the Kubernetes API.
 
 ## Local development
 
@@ -148,4 +157,4 @@ Validate `deploy/tmprl-demo-cloud.yaml` with the registry's `scripts/validate_pr
 | `web/` | React review UI and operational dashboard |
 | `sql/001_agent_ops_schema.sql` | Operational schema and indexes |
 | `deploy/tmprl-demo-cloud.yaml` | Registry `DemoProject` handoff |
-| `scripts/` | Schema initialization, governed-policy sync, and crash-recovery demo |
+| `scripts/` | Lakebase schema initialization and governed-policy sync |
