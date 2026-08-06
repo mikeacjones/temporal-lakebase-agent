@@ -4,6 +4,7 @@ import type {
   OpsMetrics,
   ReviewDecisionPayload,
   ReviewSubmissionResponse,
+  RuntimeConfig,
   RetryMetric,
   RunMetrics,
   StartWorkflowRequest,
@@ -230,6 +231,10 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(detail || `Request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
+}
+
+export async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
+  return json<RuntimeConfig>("/api/runtime-config");
 }
 
 export async function fetchRuns(): Promise<{ runs: WorkflowRun[]; demo: boolean }> {

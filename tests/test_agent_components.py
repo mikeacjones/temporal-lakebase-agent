@@ -787,6 +787,46 @@ def test_start_workflow_generates_uuid_and_submits_to_temporal(monkeypatch) -> N
     assert started["request"].run_id == response.run.run_id
 
 
+def test_runtime_config_uses_runtime_temporal_values(monkeypatch) -> None:
+    from lakebase_agentworkflow import api as api_module
+
+    monkeypatch.setenv("TEMPORAL_UI_URL", "https://cloud.temporal.io/")
+    monkeypatch.setenv("TEMPORAL_NAMESPACE", "tmprl-dem-cld-lakebase-agent.a2dd6")
+
+    response = api_module.runtime_config()
+
+    assert response.temporal_ui_url == "https://cloud.temporal.io"
+    assert response.temporal_namespace == "tmprl-dem-cld-lakebase-agent.a2dd6"
+
+
+def test_readiness_checks_lakebase_and_temporal(monkeypatch) -> None:
+    from lakebase_agentworkflow import api as api_module
+
+    calls: list[str] = []
+
+    class FakeServiceClient:
+        async def check_health(self) -> bool:
+            calls.append("temporal")
+            return True
+
+    async def fake_connect_temporal() -> object:
+        return SimpleNamespace(service_client=FakeServiceClient())
+
+    monkeypatch.setattr(
+        api_module,
+        "get_repository",
+        lambda: SimpleNamespace(
+            list_runs=lambda limit: calls.append(f"lakebase:{limit}") or []
+        ),
+    )
+    monkeypatch.setattr(api_module, "connect_temporal", fake_connect_temporal)
+
+    response = asyncio.run(api_module.readiness())
+
+    assert response.status == "ready"
+    assert calls == ["lakebase:1", "temporal"]
+
+
 def test_mount_built_frontend_serves_react_and_preserves_api_routes(tmp_path) -> None:
     from lakebase_agentworkflow.api import mount_built_frontend
 

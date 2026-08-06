@@ -188,37 +188,33 @@ async def call_model(request: ModelRequest) -> ModelDecision:
 def execute_tool(request: ToolExecutionRequest) -> ToolResult:
     """Execute one agent tool outside the deterministic workflow replay path."""
     def operation() -> ToolResult:
-        if request.tool_call.name in LOAN_TOOLS:
-            _apply_demo_tool_delay(request.tool_call.name)
-        return _execute_tool(request)
+        tool = request.tool_call
+        if tool.name in LOAN_TOOLS:
+            _apply_demo_tool_delay(tool.name)
+        if tool.name == ToolName.CREDIT_CHECK:
+            return _credit_check(request)
+        if tool.name == ToolName.INCOME_VERIFICATION:
+            return _income_verification(request)
+        if tool.name == ToolName.DEBT_TO_INCOME_CALC:
+            return _debt_to_income_calc(request)
+        if tool.name == ToolName.POLICY_LOOKUP:
+            return _policy_lookup(request)
+        if tool.name == ToolName.SAVE_NOTE:
+            return _save_note(request)
+
+        return ToolResult(
+            tool_call_id=tool.id,
+            name=tool.name,
+            success=False,
+            content=f"Unsupported tool: {tool.name}",
+            error="unsupported_tool",
+        )
 
     return _record_activity_attempt(
         request.run_id,
         request.turn,
         {"tool_name": request.tool_call.name.value},
         operation,
-    )
-
-
-def _execute_tool(request: ToolExecutionRequest) -> ToolResult:
-    tool = request.tool_call
-    if tool.name == ToolName.CREDIT_CHECK:
-        return _credit_check(request)
-    if tool.name == ToolName.INCOME_VERIFICATION:
-        return _income_verification(request)
-    if tool.name == ToolName.DEBT_TO_INCOME_CALC:
-        return _debt_to_income_calc(request)
-    if tool.name == ToolName.POLICY_LOOKUP:
-        return _policy_lookup(request)
-    if tool.name == ToolName.SAVE_NOTE:
-        return _save_note(request)
-
-    return ToolResult(
-        tool_call_id=tool.id,
-        name=tool.name,
-        success=False,
-        content=f"Unsupported tool: {tool.name}",
-        error="unsupported_tool",
     )
 
 
@@ -507,7 +503,10 @@ def _safe_record_activity_attempt(
                 status=status,
                 started_at=started_at,
                 completed_at=completed_at,
-                latency_ms=_latency_ms(started_at, completed_at),
+                latency_ms=max(
+                    0,
+                    int((completed_at - started_at).total_seconds() * 1000),
+                ),
                 error_type=type(exc).__name__ if exc else None,
                 error_message=str(exc)[:1000] if exc else None,
                 metadata=enriched_metadata,
@@ -521,7 +520,9 @@ def _activity_started_at() -> datetime:
     info = _activity_info_or_none()
     if info is None:
         return datetime.now(timezone.utc)
-    return _ensure_aware(info.started_time)
+    if info.started_time.tzinfo is None:
+        return info.started_time.replace(tzinfo=timezone.utc)
+    return info.started_time
 
 
 def _activity_info_or_none() -> Any | None:
@@ -529,16 +530,6 @@ def _activity_info_or_none() -> Any | None:
         return activity.info()
     except Exception:
         return None
-
-
-def _ensure_aware(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
-
-
-def _latency_ms(started_at: datetime, completed_at: datetime) -> int:
-    return max(0, int((completed_at - started_at).total_seconds() * 1000))
 
 
 async def _call_openai(request: ModelRequest) -> ModelDecision:
@@ -794,8 +785,12 @@ def _policy_lookup(request: ToolExecutionRequest) -> ToolResult:
             error=f"invalid_policy_inputs: {exc}",
         )
 
-    loan_purpose = _normalize_loan_purpose(
+    loan_purpose = (
         str(arguments.get("loan_purpose") or request.loan_purpose)
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
     )
     policy, policy_source, fallback_reason = _load_underwriting_policy(loan_purpose)
     hard_delinquency_flags = {"90_day_delinquency", "charge_off", "bankruptcy"}
@@ -930,10 +925,6 @@ def _load_underwriting_policy(
         UNDERWRITING_POLICY_FIXTURES["default"],
     )
     return policy, "fixture_fallback", fallback_reason
-
-
-def _normalize_loan_purpose(value: str) -> str:
-    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 def _tool_data(

@@ -13,4 +13,11 @@ node_modules
 web/node_modules
 web/dist
 web/*.tsbuildinfo
-
+config
+deploy
+docs
+output
+scripts
+spec
+sql
+tests

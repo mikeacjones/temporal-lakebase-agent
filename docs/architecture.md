@@ -2,7 +2,7 @@
 
 ## Core Decision
 
-**Temporal protects progress; Lakebase closes the governed data loop.** See [Why Temporal and Why Lakebase](why_temporal_and_lakebase.md) for the competitive framing and presenter talk track.
+**Temporal protects progress; Lakebase closes the governed data loop.**
 
 The loan-underwriting loop is modeled as a Temporal workflow, not as a long-running process hidden inside an activity. The workflow owns the durable control flow:
 
@@ -25,9 +25,9 @@ All non-deterministic work is outside the workflow:
 
 | Component | Responsibility |
 | --- | --- |
-| EKS web/API deployment | Serves the React UI and FastAPI endpoints, starts workflows, sends signals, and polls Lakebase for current run state. It scales with HTTP traffic. |
+| tmprl-demo.cloud web/API deployment | Serves the React UI and FastAPI endpoints, starts workflows, sends signals, and polls Lakebase for current run state. |
 | Temporal Cloud or Dev Server | Stores durable event history and schedules workflow/activity tasks. |
-| Temporal Worker Controller on EKS | Reconciles a `WorkerDeployment`, creating one versioned Kubernetes Deployment per Temporal Worker Deployment Version. The worker hosts `LakebaseAgentWorkflow`, registered as `LoanUnderwritingWorkflow`, plus its activities. |
+| Temporal Worker Controller | Reconciles the registry-managed `WorkerDeployment`, creating one Kubernetes Deployment per active Worker Deployment Version. The worker hosts `LakebaseAgentWorkflow`, registered as `LoanUnderwritingWorkflow`, plus its activities. |
 | Model Activity | Calls the configured model provider with client retries disabled. |
 | Tool Activity | Executes credit, income, debt-to-income, policy, and note tools with Temporal-managed retries. |
 | Lakebase Activities | Persist UI state, audit events, notes, notifications, and separate operational metrics. |
@@ -36,16 +36,16 @@ All non-deterministic work is outside the workflow:
 
 ### Runtime boundary and scaling
 
-Databricks is the Lakebase and Unity Catalog data plane; it is not the worker or web runtime. Production uses two independently deployable and scalable EKS runtime parts:
+Databricks is the Lakebase and Unity Catalog data plane; it is not the worker or web runtime. tmprl-demo.cloud deploys two runtime parts from the repository's Dockerfiles:
 
 1. The web/API Deployment handles browser and API traffic. Adding its replicas increases request capacity without adding Temporal pollers.
-2. A Temporal Worker Controller `WorkerDeployment` owns the standalone worker. The controller creates a Kubernetes Deployment for each active Temporal Worker Deployment Version and supports progressive rollout without moving pinned workflows off their compatible version. A `WorkerResourceTemplate` can create a per-version HPA, so worker capacity changes do not affect the web tier.
+2. A Temporal Worker Controller `WorkerDeployment` owns the standalone worker. The controller creates a Kubernetes Deployment for each active Temporal Worker Deployment Version without moving pinned workflows off their compatible version.
 
 Temporal Cloud is the production durable control plane between them. The Worker Controller's `Connection` references the Temporal Cloud API-key secret and injects `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_DEPLOYMENT_NAME`, and `TEMPORAL_WORKER_BUILD_ID`; the worker pod template must not set those four values manually. Lakebase remains the shared operational database, while Unity Catalog owns the governed policy source and Delta audit destination. This deployment boundary is independent of the Lakebase-versus-Neon argument: Lakebase is selected for its Databricks-native governed data paths, not because it hosts the application process.
 
 ### Off-platform Databricks authentication
 
-Each EKS workload authenticates to Databricks with an OAuth machine-to-machine service principal supplied through Kubernetes secret injection. In `endpoint` mode, the Databricks SDK uses `DATABRICKS_HOST`, `DATABRICKS_AUTH_TYPE=oauth-m2m`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`, and `LAKEBASE_ENDPOINT` to resolve the Postgres host and mint short-lived database credentials. `LAKEBASE_USER` is the same service-principal client/application ID because that is the matching Lakebase Postgres role. Connections use `sslmode=require`, pooling, token refresh, and stale-connection recovery.
+Each runtime component authenticates to Databricks with an OAuth machine-to-machine service principal supplied by the registry's project-scoped AWS Secrets Manager integration. In `endpoint` mode, the Databricks SDK uses `DATABRICKS_HOST`, `DATABRICKS_AUTH_TYPE=oauth-m2m`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`, and `LAKEBASE_ENDPOINT` to resolve the Postgres host and mint short-lived database credentials. `LAKEBASE_USER` can override the Postgres role; otherwise the runtime uses the service-principal client ID. Connections use `sslmode=require`, pooling, and pool recycling before OAuth token expiry.
 
 Use distinct worker and API service principals where operationally practical. Apply least privilege at both layers:
 
@@ -54,7 +54,7 @@ Use distinct worker and API service principals where operationally practical. Ap
 - Postgres API role: connect to `databricks_postgres` and read only the UI-serving and operational-metric objects it exposes.
 - Setup/operator identity: separately hold the Unity Catalog and Lakebase permissions needed to manage source/destination schemas, the synced table, and CDF configuration.
 
-Do not put client secrets in container images, source control, or Kubernetes ConfigMaps. The EKS deployment mechanism should source them from a Kubernetes Secret or an external secret manager and rotate them without rebuilding the application image.
+Do not put client secrets in container images or source control. tmprl-demo.cloud mirrors the declared project secret into the runtime namespace and rotates it without rebuilding the application image.
 
 ## Workflow Signals And Queries
 
