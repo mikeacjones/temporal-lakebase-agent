@@ -1,5 +1,6 @@
 import type {
   CostMetric,
+  DemoControlResponse,
   LoanRecommendation,
   OpsMetrics,
   ReviewDecisionPayload,
@@ -235,6 +236,14 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   return json<RuntimeConfig>("/api/runtime-config");
+}
+
+export async function crashWorker(requestedBy: string): Promise<DemoControlResponse> {
+  return json<DemoControlResponse>("/api/demo-controls/crash-worker", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requested_by: requestedBy }),
+  });
 }
 
 export async function fetchRuns(): Promise<{ runs: WorkflowRun[]; demo: boolean }> {

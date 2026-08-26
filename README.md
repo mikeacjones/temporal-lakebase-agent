@@ -13,6 +13,7 @@ The `LoanUnderwritingWorkflow`:
 3. Persists messages, evidence, metrics, and audit events to Lakebase.
 4. Produces a recommendation and waits durably for an underwriter signal.
 5. Resumes after approval, denial, or a request for more information without losing prior work.
+6. Includes environment-gated resilience controls for a retryable model outage and a one-shot worker-process crash.
 
 The default `scripted` model provider is deterministic and needs no model API key. The optional `openai` provider reads `OPENAI_API_KEY` at runtime.
 
@@ -104,6 +105,16 @@ To demonstrate crash recovery without executing commands inside a container:
 
 The hosted worker intentionally adds a short delay to each scripted underwriting tool so the crash can be triggered while work is in flight. The registry owns pod deletion and recovery; the app does not call the Kubernetes API.
 
+The in-app **Resilience lab** is available when `DEMO_CONTROLS_ENABLED=true` on
+both the web and worker components. **Start with model failure** makes the first
+model activity attempt raise a retryable `ModelAPIUnavailable` error, after
+which the normal Temporal retry policy continues the run. **Crash active
+worker** starts a short Temporal control workflow: attempt 1 exits the worker
+process, Kubernetes restarts the container, and attempt 2 confirms recovery.
+The control never shells into a container and does not need Kubernetes
+credentials. Use the worker control in an isolated crashable environment when
+other users may share the base deployment.
+
 ## Local development
 
 Prerequisites: Python 3.11+, Node.js 22.12+, `uv`, and a reachable Temporal server.
@@ -122,6 +133,7 @@ AGENT_MODEL_PROVIDER=scripted
 TEMPORAL_ADDRESS=127.0.0.1:7233
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TLS=false
+DEMO_CONTROLS_ENABLED=false
 ```
 
 Start the services in separate terminals:

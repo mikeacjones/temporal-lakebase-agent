@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from lakebase_agentworkflow.helpers.env import load_env_file
+from lakebase_agentworkflow.helpers.env import env_truthy, load_env_file
 from lakebase_agentworkflow.helpers.lakebase import get_repository
 from lakebase_agentworkflow.helpers.models import (
     AgentMessage,
@@ -22,11 +22,12 @@ from lakebase_agentworkflow.helpers.models import (
     StartWorkflowRequest,
     StartWorkflowResponse,
     TokenUsage,
+    WorkerCrashRequest,
     WorkflowRunListResponse,
     WorkflowRunView,
 )
 from lakebase_agentworkflow.helpers.temporal_client import connect_temporal
-from lakebase_agentworkflow.workflows import LakebaseAgentWorkflow
+from lakebase_agentworkflow.workflows import LakebaseAgentWorkflow, WorkerCrashDemoWorkflow
 
 
 load_env_file()
@@ -45,6 +46,18 @@ class ReviewSubmissionResponse(BaseModel):
 class RuntimeConfigResponse(BaseModel):
     temporal_ui_url: str
     temporal_namespace: str
+    demo_controls_enabled: bool
+
+
+class DemoWorkerCrashRequest(BaseModel):
+    requested_by: str = Field(..., min_length=1)
+
+
+class DemoControlResponse(BaseModel):
+    accepted: bool
+    control_id: str
+    workflow_id: str
+    message: str
 
 
 class ReadinessResponse(BaseModel):
@@ -129,6 +142,7 @@ def runtime_config() -> RuntimeConfigResponse:
             os.getenv("TEMPORAL_UI_URL", "http://localhost:8233").rstrip("/")
         ),
         temporal_namespace=os.getenv("TEMPORAL_NAMESPACE", "default"),
+        demo_controls_enabled=env_truthy("DEMO_CONTROLS_ENABLED"),
     )
 
 
@@ -161,6 +175,11 @@ def get_run(run_id: str) -> StartWorkflowResponse:
 
 @app.post("/api/workflows", response_model=StartWorkflowResponse)
 async def start_workflow(payload: StartWorkflowRequest) -> StartWorkflowResponse:
+    if payload.demo_model_failure_attempts and not env_truthy(
+        "DEMO_CONTROLS_ENABLED"
+    ):
+        raise HTTPException(status_code=403, detail="Demo controls are disabled")
+
     run_id = str(uuid.uuid4())
     workflow_id = f"lakebase-agent-{run_id}"
     agent_request = AgentRequest(
@@ -172,6 +191,7 @@ async def start_workflow(payload: StartWorkflowRequest) -> StartWorkflowResponse
         loan_purpose=payload.loan_purpose,
         model=payload.model,
         max_turns=payload.max_turns,
+        demo_model_failure_attempts=payload.demo_model_failure_attempts,
         metadata=payload.metadata,
     )
 
@@ -197,6 +217,47 @@ async def start_workflow(payload: StartWorkflowRequest) -> StartWorkflowResponse
         run = None
     run = run or _pending_run_view(run_id=run_id, workflow_id=workflow_id, payload=payload)
     return StartWorkflowResponse(run=run)
+
+
+@app.post(
+    "/api/demo-controls/crash-worker",
+    response_model=DemoControlResponse,
+    status_code=202,
+)
+async def crash_worker(payload: DemoWorkerCrashRequest) -> DemoControlResponse:
+    if not env_truthy("DEMO_CONTROLS_ENABLED"):
+        raise HTTPException(status_code=404, detail="Demo controls are disabled")
+
+    control_id = str(uuid.uuid4())
+    workflow_id = f"lakebase-agent-worker-crash-{control_id}"
+    request = WorkerCrashRequest(
+        control_id=control_id,
+        requested_by=payload.requested_by,
+    )
+    try:
+        client = await connect_temporal()
+        await client.start_workflow(
+            WorkerCrashDemoWorkflow.run,
+            request,
+            id=workflow_id,
+            task_queue=os.getenv("TEMPORAL_TASK_QUEUE", "lakebase-agent-task-queue"),
+        )
+    except Exception as exc:
+        logger.exception("Worker crash demo workflow start failed")
+        raise HTTPException(
+            status_code=503,
+            detail="Worker crash demo could not be started; check the API server logs.",
+        ) from exc
+
+    return DemoControlResponse(
+        accepted=True,
+        control_id=control_id,
+        workflow_id=workflow_id,
+        message=(
+            "Crash requested. The worker exits on activity attempt 1 and Temporal "
+            "confirms recovery on attempt 2."
+        ),
+    )
 
 
 @app.post(
@@ -317,6 +378,7 @@ def _pending_run_view(
         "applicant_id": payload.applicant_id,
         "loan_amount": payload.loan_amount,
         "loan_purpose": payload.loan_purpose,
+        "demo_model_failure_attempts": payload.demo_model_failure_attempts,
     }
     return WorkflowRunView(
         run_id=run_id,

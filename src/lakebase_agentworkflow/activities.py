@@ -6,11 +6,12 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
+from lakebase_agentworkflow.helpers.env import env_truthy
 from lakebase_agentworkflow.helpers.lakebase import get_repository
 from lakebase_agentworkflow.helpers.models import (
     ActivityAttemptMetricRecord,
@@ -36,6 +37,8 @@ from lakebase_agentworkflow.helpers.models import (
     TurnMetricRecord,
     UnderwritingDecision,
     UnderwritingPolicy,
+    WorkerCrashRequest,
+    WorkerCrashResult,
     WorkflowMetricCompletedRecord,
     WorkflowMetricStartedRecord,
 )
@@ -165,6 +168,20 @@ T = TypeVar("T")
 async def call_model(request: ModelRequest) -> ModelDecision:
     """Call the configured model provider and return a structured decision."""
     async def operation() -> ModelDecision:
+        attempt = _activity_attempt()
+        if request.simulated_failure_attempts and not env_truthy(
+            "DEMO_CONTROLS_ENABLED"
+        ):
+            raise ApplicationError(
+                "Demo controls are disabled on this worker",
+                type="DemoControlsDisabled",
+                non_retryable=True,
+            )
+        if attempt <= request.simulated_failure_attempts:
+            raise ApplicationError(
+                f"Simulated model API outage on activity attempt {attempt}",
+                type="ModelAPIUnavailable",
+            )
         provider = os.getenv("AGENT_MODEL_PROVIDER", "scripted").strip().lower()
         if provider == "scripted":
             return scripted_model_decision(request)
@@ -179,9 +196,44 @@ async def call_model(request: ModelRequest) -> ModelDecision:
     return await _record_async_activity_attempt(
         request.run_id,
         request.turn,
-        {"model": request.model, "message_count": len(request.messages)},
+        {
+            "model": request.model,
+            "message_count": len(request.messages),
+            "simulated_failure_attempts": request.simulated_failure_attempts,
+        },
         operation,
     )
+
+
+@activity.defn
+def crash_worker_process(request: WorkerCrashRequest) -> WorkerCrashResult:
+    """Exit the worker once, then acknowledge recovery on the retry attempt."""
+    if not env_truthy("DEMO_CONTROLS_ENABLED"):
+        raise ApplicationError(
+            "Demo controls are disabled on this worker",
+            type="DemoControlsDisabled",
+            non_retryable=True,
+        )
+
+    attempt = _activity_attempt()
+    if attempt > 1:
+        logger.warning(
+            "Worker crash demo %s recovered on attempt %s",
+            request.control_id,
+            attempt,
+        )
+        return WorkerCrashResult(
+            control_id=request.control_id,
+            recovered=True,
+            completed_attempt=attempt,
+        )
+
+    logger.error(
+        "Worker crash demo %s requested by %s; exiting process on attempt 1",
+        request.control_id,
+        request.requested_by,
+    )
+    _terminate_worker_process(137)
 
 
 @activity.defn
@@ -530,6 +582,15 @@ def _activity_info_or_none() -> Any | None:
         return activity.info()
     except Exception:
         return None
+
+
+def _activity_attempt() -> int:
+    info = _activity_info_or_none()
+    return max(int(info.attempt), 1) if info is not None else 1
+
+
+def _terminate_worker_process(exit_code: int) -> NoReturn:
+    os._exit(exit_code)
 
 
 async def _call_openai(request: ModelRequest) -> ModelDecision:
