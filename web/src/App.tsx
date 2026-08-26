@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchRuns, fetchRuntimeConfig, startWorkflow, submitReview } from "./api";
+import { crashWorker, fetchRuns, fetchRuntimeConfig, startWorkflow, submitReview } from "./api";
 import { OpsDashboard } from "./components/OpsDashboard";
 import { ReviewAudit, ReviewPanel, recommendationForRun } from "./components/ReviewPanel";
 import { RunCard } from "./components/RunCard";
@@ -113,11 +113,16 @@ export default function App() {
   const [model, setModel] = useState("gpt-4.1-mini");
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [startingWithModelFailure, setStartingWithModelFailure] = useState(false);
+  const [crashingWorker, setCrashingWorker] = useState(false);
+  const [controlStatus, setControlStatus] = useState<string | null>(null);
+  const [controlError, setControlError] = useState<string | null>(null);
   const [demoMode, setDemoMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({
     temporal_ui_url: "http://localhost:8233",
     temporal_namespace: "default",
+    demo_controls_enabled: false,
   });
   const transcriptRef = useRef<HTMLDivElement>(null);
 
@@ -198,7 +203,7 @@ export default function App() {
     setLoanPurpose(preset.purpose);
   }
 
-  async function submitWorkflow() {
+  async function submitWorkflow(demoModelFailureAttempts = 0) {
     if (!applicantId || !Number.isFinite(loanAmount) || loanAmount <= 0 || starting) return;
     const purposeLabel = loanPurpose.replace(/_/g, " ");
     const payload: StartWorkflowRequest = {
@@ -209,20 +214,49 @@ export default function App() {
       loan_purpose: loanPurpose,
       model: model.trim() || "gpt-4.1-mini",
       max_turns: 8,
+      demo_model_failure_attempts: demoModelFailureAttempts,
       metadata: { channel: "loan_review_ui" },
     };
 
     setStarting(true);
+    setStartingWithModelFailure(demoModelFailureAttempts > 0);
     setError(null);
+    setControlError(null);
     try {
       const { run, demo } = await startWorkflow(payload, demoMode);
       setRuns((previous) => [run, ...previous.filter((item) => item.run_id !== run.run_id)]);
       setSelectedRunId(run.run_id);
       setDemoMode(demo);
+      if (demoModelFailureAttempts > 0) {
+        setControlStatus(
+          "Model outage injected. Temporal will retry the first model activity automatically."
+        );
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not start workflow");
     } finally {
       setStarting(false);
+      setStartingWithModelFailure(false);
+    }
+  }
+
+  async function requestWorkerCrash() {
+    if (crashingWorker) return;
+    const confirmed = window.confirm(
+      "Crash the active worker process? Kubernetes will restart it and Temporal will retry the control activity."
+    );
+    if (!confirmed) return;
+
+    setCrashingWorker(true);
+    setControlError(null);
+    setControlStatus(null);
+    try {
+      const response = await crashWorker(userId.trim() || "loan-officer@example.com");
+      setControlStatus(response.message);
+    } catch (err: unknown) {
+      setControlError(err instanceof Error ? err.message : "Could not start worker crash demo");
+    } finally {
+      setCrashingWorker(false);
     }
   }
 
@@ -429,11 +463,57 @@ export default function App() {
                 <button
                   className="btn btn--primary starter__submit"
                   disabled={starting || !applicantId || !Number.isFinite(loanAmount) || loanAmount <= 0}
-                  onClick={submitWorkflow}
+                  onClick={() => submitWorkflow()}
                 >
                   {starting ? "Starting workflow…" : `Underwrite ${formatMoney(loanAmount)}`}
                 </button>
               </div>
+
+              {runtimeConfig.demo_controls_enabled && (
+                <section className="demo-controls" aria-labelledby="demo-controls-heading">
+                  <div className="demo-controls__intro">
+                    <span className="eyebrow">Resilience lab</span>
+                    <h2 id="demo-controls-heading">Demo controls</h2>
+                    <p>Trigger real failures, then watch Temporal recover without losing progress.</p>
+                  </div>
+                  <div className="demo-controls__actions">
+                    <article>
+                      <div>
+                        <strong>Model API outage</strong>
+                        <span>Fail attempt 1 of the next run’s first model activity.</span>
+                      </div>
+                      <button
+                        className="btn btn--secondary"
+                        disabled={starting || !applicantId || loanAmount <= 0}
+                        onClick={() => submitWorkflow(1)}
+                      >
+                        {startingWithModelFailure ? "Injecting failure…" : "Start with model failure"}
+                      </button>
+                    </article>
+                    <article>
+                      <div>
+                        <strong>Worker crash</strong>
+                        <span>Exit the active worker once; its retry confirms recovery.</span>
+                      </div>
+                      <button
+                        className="btn btn--danger"
+                        disabled={crashingWorker}
+                        onClick={requestWorkerCrash}
+                      >
+                        {crashingWorker ? "Requesting crash…" : "Crash active worker"}
+                      </button>
+                    </article>
+                  </div>
+                  {(controlStatus || controlError) && (
+                    <p
+                      className={controlError ? "demo-controls__notice demo-controls__notice--error" : "demo-controls__notice"}
+                      aria-live="polite"
+                    >
+                      {controlError ?? controlStatus}
+                    </p>
+                  )}
+                </section>
+              )}
 
               {error && <div className="error">{error}</div>}
             </section>

@@ -52,6 +52,7 @@ class AgentRequest(BaseModel):
     loan_purpose: str = Field(..., min_length=1)
     model: str = "gpt-4.1-mini"
     max_turns: int = Field(default=8, ge=5, le=16)
+    demo_model_failure_attempts: int = Field(default=0, ge=0, le=3)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -106,6 +107,7 @@ class ModelRequest(BaseModel):
     loan_amount: float = Field(..., gt=0)
     loan_purpose: str
     tools: list[ToolSchema]
+    simulated_failure_attempts: int = Field(default=0, ge=0, le=3)
 
 
 class ModelDecision(BaseModel):
@@ -187,11 +189,23 @@ class StartWorkflowRequest(BaseModel):
     loan_purpose: str = Field(..., min_length=1)
     model: str = "gpt-4.1-mini"
     max_turns: int = Field(default=8, ge=5, le=16)
+    demo_model_failure_attempts: int = Field(default=0, ge=0, le=3)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class StartWorkflowResponse(BaseModel):
     run: WorkflowRunView
+
+
+class WorkerCrashRequest(BaseModel):
+    control_id: str = Field(..., min_length=1)
+    requested_by: str = Field(..., min_length=1)
+
+
+class WorkerCrashResult(BaseModel):
+    control_id: str
+    recovered: bool
+    completed_attempt: int = Field(..., ge=1)
 
 
 class LakebaseWriteResult(BaseModel):

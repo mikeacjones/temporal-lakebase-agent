@@ -15,6 +15,7 @@ from temporalio.worker import Worker, WorkerDeploymentConfig
 
 from lakebase_agentworkflow.activities import (
     call_model,
+    crash_worker_process,
     execute_tool,
     load_recent_context,
     record_event,
@@ -31,7 +32,7 @@ from lakebase_agentworkflow.activities import (
 )
 from lakebase_agentworkflow.helpers.env import load_env_file
 from lakebase_agentworkflow.helpers.temporal_client import connect_temporal
-from lakebase_agentworkflow.workflows import LakebaseAgentWorkflow
+from lakebase_agentworkflow.workflows import LakebaseAgentWorkflow, WorkerCrashDemoWorkflow
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 ACTIVITIES = [
     call_model,
+    crash_worker_process,
     execute_tool,
     load_recent_context,
     record_event,
@@ -166,7 +168,7 @@ async def main() -> None:
         worker = Worker(
             client,
             task_queue=task_queue,
-            workflows=[LakebaseAgentWorkflow],
+            workflows=[LakebaseAgentWorkflow, WorkerCrashDemoWorkflow],
             activities=ACTIVITIES,
             activity_executor=activity_executor,
             **settings.worker_kwargs(),

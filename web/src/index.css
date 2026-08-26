@@ -731,6 +731,93 @@ button {
   background: #fbdfe0;
 }
 
+.btn--danger {
+  border-color: rgba(212, 55, 59, 0.35);
+  color: #fff;
+  background: var(--bad);
+}
+
+.btn--danger:not(:disabled):hover {
+  background: #b92b30;
+}
+
+.demo-controls {
+  max-width: 1120px;
+  margin: 12px auto 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 0.65fr) minmax(0, 1.35fr);
+  gap: 14px;
+  border: 1px solid #efd2a5;
+  border-radius: var(--r-lg);
+  background: var(--warn-soft);
+  padding: 13px 14px;
+}
+
+.demo-controls__intro h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+}
+
+.demo-controls__intro p {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.demo-controls__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.demo-controls__actions article {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(146, 91, 13, 0.18);
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px 11px;
+}
+
+.demo-controls__actions strong,
+.demo-controls__actions span {
+  display: block;
+}
+
+.demo-controls__actions strong {
+  font-size: 13px;
+}
+
+.demo-controls__actions span {
+  margin-top: 3px;
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.demo-controls__actions .btn {
+  flex: 0 0 auto;
+  padding: 8px 11px;
+  font-size: 12px;
+}
+
+.demo-controls__notice {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #73510d;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.demo-controls__notice--error {
+  color: var(--bad);
+}
+
 .error {
   max-width: 1120px;
   margin: 12px auto 0;
@@ -1701,6 +1788,10 @@ button {
     grid-column: 1 / -1;
   }
 
+  .demo-controls {
+    grid-template-columns: 1fr;
+  }
+
   .ops-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1817,6 +1908,19 @@ button {
   .starter__actions .chip {
     padding-inline: 8px;
     font-size: 11px;
+  }
+
+  .demo-controls__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-controls__actions article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .demo-controls__actions .btn {
+    width: 100%;
   }
 
   .run-detail__head h2 {

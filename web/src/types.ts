@@ -79,6 +79,7 @@ export interface StartWorkflowRequest {
   loan_purpose: string;
   model: string;
   max_turns?: number;
+  demo_model_failure_attempts?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -96,6 +97,14 @@ export interface ReviewSubmissionResponse {
 export interface RuntimeConfig {
   temporal_ui_url: string;
   temporal_namespace: string;
+  demo_controls_enabled: boolean;
+}
+
+export interface DemoControlResponse {
+  accepted: boolean;
+  control_id: string;
+  workflow_id: string;
+  message: string;
 }
 
 export interface RunMetrics {

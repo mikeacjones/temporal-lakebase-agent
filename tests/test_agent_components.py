@@ -15,7 +15,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from temporalio.common import VersioningBehavior
 
-from lakebase_agentworkflow.activities import execute_tool, scripted_model_decision
+from lakebase_agentworkflow.activities import (
+    call_model,
+    crash_worker_process,
+    execute_tool,
+    scripted_model_decision,
+)
 from lakebase_agentworkflow.helpers.lakebase import LakebaseRepository
 from lakebase_agentworkflow.helpers.models import (
     ActivityAttemptMetricRecord,
@@ -26,6 +31,7 @@ from lakebase_agentworkflow.helpers.models import (
     LakebaseEvent,
     LakebaseWriteResult,
     LoanRecommendation,
+    MessageRecord,
     ModelRequest,
     ReviewDecision,
     ReviewDecisionPayload,
@@ -38,7 +44,7 @@ from lakebase_agentworkflow.helpers.models import (
     ToolExecutionRequest,
     ToolName,
     ToolResult,
-    MessageRecord,
+    WorkerCrashRequest,
     TurnMetricRecord,
     UnderwritingDecision,
     WorkflowMetricCompletedRecord,
@@ -140,6 +146,74 @@ def test_scripted_model_fixture_outcomes_span_approve_and_decline() -> None:
 
     assert clean["decision"] == UnderwritingDecision.APPROVE.value
     assert decline["decision"] == UnderwritingDecision.DECLINE.value
+
+
+def test_model_api_failure_injection_is_retryable(monkeypatch) -> None:
+    from lakebase_agentworkflow import activities as activities_module
+
+    monkeypatch.setenv("DEMO_CONTROLS_ENABLED", "true")
+    monkeypatch.setattr(activities_module, "_activity_info_or_none", lambda: None)
+    request = ModelRequest(
+        run_id="run-model-failure",
+        turn=1,
+        model="scripted",
+        user_id="user@example.com",
+        messages=[AgentMessage(role="user", content="Underwrite this loan.")],
+        applicant_id="applicant-clean",
+        loan_amount=25000,
+        loan_purpose="debt_consolidation",
+        tools=ToolCatalog.default(),
+        simulated_failure_attempts=1,
+    )
+
+    try:
+        asyncio.run(call_model(request))
+    except Exception as exc:
+        assert type(exc).__name__ == "ApplicationError"
+        assert getattr(exc, "type", None) == "ModelAPIUnavailable"
+        assert getattr(exc, "non_retryable", None) is False
+    else:
+        raise AssertionError("The first model activity attempt should fail")
+
+
+def test_worker_crash_activity_exits_once_then_confirms_recovery(monkeypatch) -> None:
+    from lakebase_agentworkflow import activities as activities_module
+
+    class WorkerExitIntercepted(Exception):
+        pass
+
+    request = WorkerCrashRequest(
+        control_id="control-1",
+        requested_by="operator@example.com",
+    )
+    monkeypatch.setenv("DEMO_CONTROLS_ENABLED", "true")
+    monkeypatch.setattr(
+        activities_module,
+        "_activity_info_or_none",
+        lambda: SimpleNamespace(attempt=1),
+    )
+    monkeypatch.setattr(
+        activities_module,
+        "_terminate_worker_process",
+        lambda _: (_ for _ in ()).throw(WorkerExitIntercepted()),
+    )
+
+    try:
+        crash_worker_process(request)
+    except WorkerExitIntercepted:
+        pass
+    else:
+        raise AssertionError("The first crash activity attempt should exit the worker")
+
+    monkeypatch.setattr(
+        activities_module,
+        "_activity_info_or_none",
+        lambda: SimpleNamespace(attempt=2),
+    )
+    result = crash_worker_process(request)
+
+    assert result.recovered is True
+    assert result.completed_attempt == 2
 
 
 def test_credit_tool_uses_applicant_fixture() -> None:
@@ -741,6 +815,7 @@ def test_disabled_lakebase_returns_empty_ops_metrics() -> None:
 
 def test_start_workflow_generates_uuid_and_submits_to_temporal(monkeypatch) -> None:
     monkeypatch.setenv("LAKEBASE_CONNECTION_MODE", "disabled")
+    monkeypatch.setenv("DEMO_CONTROLS_ENABLED", "true")
     from lakebase_agentworkflow import api as api_module
 
     started: dict[str, Any] = {}
@@ -778,6 +853,7 @@ def test_start_workflow_generates_uuid_and_submits_to_temporal(monkeypatch) -> N
                 applicant_id="applicant-clean",
                 loan_amount=25000,
                 loan_purpose="debt_consolidation",
+                demo_model_failure_attempts=1,
             )
         )
     )
@@ -785,6 +861,7 @@ def test_start_workflow_generates_uuid_and_submits_to_temporal(monkeypatch) -> N
     assert str(UUID(response.run.run_id)) == response.run.run_id
     assert started["workflow_id"] == f"lakebase-agent-{response.run.run_id}"
     assert started["request"].run_id == response.run.run_id
+    assert started["request"].demo_model_failure_attempts == 1
 
 
 def test_runtime_config_uses_runtime_temporal_values(monkeypatch) -> None:
@@ -792,11 +869,88 @@ def test_runtime_config_uses_runtime_temporal_values(monkeypatch) -> None:
 
     monkeypatch.setenv("TEMPORAL_UI_URL", "https://cloud.temporal.io/")
     monkeypatch.setenv("TEMPORAL_NAMESPACE", "tmprl-dem-cld-lakebase-agent.a2dd6")
+    monkeypatch.setenv("DEMO_CONTROLS_ENABLED", "true")
 
     response = api_module.runtime_config()
 
     assert response.temporal_ui_url == "https://cloud.temporal.io"
     assert response.temporal_namespace == "tmprl-dem-cld-lakebase-agent.a2dd6"
+    assert response.demo_controls_enabled is True
+
+
+def test_worker_crash_control_starts_temporal_workflow(monkeypatch) -> None:
+    from lakebase_agentworkflow import api as api_module
+
+    started: dict[str, Any] = {}
+
+    class FakeTemporalClient:
+        async def start_workflow(
+            self,
+            workflow: Any,
+            request: WorkerCrashRequest,
+            *,
+            id: str,
+            task_queue: str,
+        ) -> None:
+            started.update(
+                workflow=workflow,
+                request=request,
+                workflow_id=id,
+                task_queue=task_queue,
+            )
+
+    async def fake_connect_temporal() -> FakeTemporalClient:
+        return FakeTemporalClient()
+
+    monkeypatch.setenv("DEMO_CONTROLS_ENABLED", "true")
+    monkeypatch.setenv("TEMPORAL_TASK_QUEUE", "lakebase-agent-task-queue-test")
+    monkeypatch.setattr(api_module, "connect_temporal", fake_connect_temporal)
+
+    response = asyncio.run(
+        api_module.crash_worker(
+            api_module.DemoWorkerCrashRequest(requested_by="operator@example.com")
+        )
+    )
+
+    assert response.accepted is True
+    assert started["request"].control_id == response.control_id
+    assert started["request"].requested_by == "operator@example.com"
+    assert started["workflow_id"] == response.workflow_id
+    assert started["task_queue"] == "lakebase-agent-task-queue-test"
+
+
+def test_demo_failure_controls_are_disabled_by_default(monkeypatch) -> None:
+    from lakebase_agentworkflow import api as api_module
+
+    monkeypatch.delenv("DEMO_CONTROLS_ENABLED", raising=False)
+
+    try:
+        asyncio.run(
+            api_module.start_workflow(
+                StartWorkflowRequest(
+                    user_request="Underwrite this loan with an outage.",
+                    applicant_id="applicant-clean",
+                    loan_amount=25000,
+                    loan_purpose="debt_consolidation",
+                    demo_model_failure_attempts=1,
+                )
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("Model failure injection must be environment-gated")
+
+    try:
+        asyncio.run(
+            api_module.crash_worker(
+                api_module.DemoWorkerCrashRequest(requested_by="operator@example.com")
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 404
+    else:
+        raise AssertionError("Worker crash control must be environment-gated")
 
 
 def test_readiness_checks_lakebase_and_temporal(monkeypatch) -> None:

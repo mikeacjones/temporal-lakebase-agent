@@ -9,6 +9,7 @@ from temporalio.common import RetryPolicy
 with workflow.unsafe.imports_passed_through():
     from lakebase_agentworkflow.activities import (
         call_model,
+        crash_worker_process,
         execute_tool,
         load_recent_context,
         record_event,
@@ -50,6 +51,8 @@ with workflow.unsafe.imports_passed_through():
         ToolResult,
         ToolResultRecord,
         TurnMetricRecord,
+        WorkerCrashRequest,
+        WorkerCrashResult,
         WorkflowMetricCompletedRecord,
         WorkflowMetricStartedRecord,
     )
@@ -70,6 +73,24 @@ LAKEBASE_RETRY = RetryPolicy(
     maximum_interval=timedelta(seconds=20),
     maximum_attempts=5,
 )
+WORKER_CRASH_RETRY = RetryPolicy(
+    initial_interval=timedelta(seconds=2),
+    maximum_interval=timedelta(seconds=10),
+    maximum_attempts=2,
+)
+
+
+@workflow.defn(name="WorkerCrashDemoWorkflow")
+class WorkerCrashDemoWorkflow:
+    @workflow.run
+    async def run(self, request: WorkerCrashRequest) -> WorkerCrashResult:
+        return await workflow.execute_activity(
+            crash_worker_process,
+            request,
+            start_to_close_timeout=timedelta(seconds=10),
+            schedule_to_close_timeout=timedelta(minutes=2),
+            retry_policy=WORKER_CRASH_RETRY,
+        )
 
 
 @workflow.defn(name="LoanUnderwritingWorkflow")
@@ -121,6 +142,7 @@ class LakebaseAgentWorkflow:
             "applicant_id": request.applicant_id,
             "loan_amount": request.loan_amount,
             "loan_purpose": request.loan_purpose,
+            "demo_model_failure_attempts": request.demo_model_failure_attempts,
         }
         messages = [
             AgentMessage(
@@ -131,6 +153,7 @@ class LakebaseAgentWorkflow:
         ]
         usage = self._usage
         tool_results = self._tool_results
+        pending_model_failure_attempts = request.demo_model_failure_attempts
 
         await workflow.execute_activity(
             record_run_started,
@@ -224,11 +247,13 @@ class LakebaseAgentWorkflow:
                         loan_amount=request.loan_amount,
                         loan_purpose=request.loan_purpose,
                         tools=ToolCatalog.default(),
+                        simulated_failure_attempts=pending_model_failure_attempts,
                     ),
                     start_to_close_timeout=timedelta(seconds=30),
                     schedule_to_close_timeout=timedelta(minutes=3),
                     retry_policy=MODEL_RETRY,
                 )
+                pending_model_failure_attempts = 0
                 model_latency_ms = _latency_ms(model_started_at, workflow.now())
             except Exception as exc:
                 if metrics_enabled:
