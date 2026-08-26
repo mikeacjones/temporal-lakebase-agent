@@ -322,11 +322,7 @@ class LakebaseRepository:
                 "metadata": {},
             },
         }
-        next_status = (
-            AgentRunStatus.RUNNING.value
-            if resume
-            else AgentRunStatus.AWAITING_REVIEW.value
-        )
+        next_status = AgentRunStatus.RUNNING.value
         self._execute(
             f"""
                 UPDATE {self.settings.schema}.agent_runs

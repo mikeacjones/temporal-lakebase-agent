@@ -4,6 +4,10 @@ import { OpsDashboard } from "./components/OpsDashboard";
 import { ReviewAudit, ReviewPanel, recommendationForRun } from "./components/ReviewPanel";
 import { RunCard } from "./components/RunCard";
 import { TemporalLogo, TemporalMark } from "./components/TemporalLogo";
+import {
+  reconcilePendingReview,
+  type PendingReviewSubmission,
+} from "./reviewState";
 import type {
   ReviewDecisionPayload,
   RuntimeConfig,
@@ -125,6 +129,7 @@ export default function App() {
     demo_controls_enabled: false,
   });
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const pendingReviewsRef = useRef(new Map<string, PendingReviewSubmission>());
 
   const selectedRun = useMemo(
     () => runs.find((run) => run.run_id === selectedRunId) ?? runs[0],
@@ -164,12 +169,20 @@ export default function App() {
         const { runs: loadedRuns, demo } = await fetchRuns();
         if (cancelled) return;
         setRuns((previousRuns) => {
+          const reconciledRuns = loadedRuns.map((loadedRun) => {
+            const result = reconcilePendingReview(
+              loadedRun,
+              pendingReviewsRef.current.get(loadedRun.run_id)
+            );
+            if (!result.keepPending) pendingReviewsRef.current.delete(loadedRun.run_id);
+            return result.run;
+          });
           const optimisticRuns = previousRuns.filter(
             (run) =>
               run.status === "pending" &&
-              !loadedRuns.some((loadedRun) => loadedRun.run_id === run.run_id)
+              !reconciledRuns.some((loadedRun) => loadedRun.run_id === run.run_id)
           );
-          return [...optimisticRuns, ...loadedRuns];
+          return [...optimisticRuns, ...reconciledRuns];
         });
         setSelectedRunId((currentRunId) => currentRunId ?? loadedRuns[0]?.run_id ?? null);
         setDemoMode(demo);
@@ -262,6 +275,8 @@ export default function App() {
 
   async function reviewRun(runId: string, payload: ReviewDecisionPayload) {
     const response = await submitReview(runId, payload, demoMode);
+    const acceptedAt = new Date().toISOString();
+    pendingReviewsRef.current.set(runId, { payload, acceptedAt });
     setDemoMode(response.demo);
     setRuns((previous) =>
       previous.map((run) =>
@@ -270,7 +285,7 @@ export default function App() {
               ...run,
               status: payload.decision === "request_more_info" ? "running" : "completed",
               review_decision: payload,
-              updated_at: new Date().toISOString(),
+              updated_at: acceptedAt,
             }
           : run
       )
@@ -278,7 +293,9 @@ export default function App() {
   }
 
   const completedRuns = runs.filter((run) => run.status === "completed").length;
-  const awaitingRuns = runs.filter((run) => run.status === "awaiting_review").length;
+  const awaitingRuns = runs.filter(
+    (run) => run.status === "awaiting_review" && !run.review_decision
+  ).length;
   const totalTokens = runs.reduce((sum, run) => sum + run.usage.total_tokens, 0);
   const selectedRecommendation = selectedRun ? recommendationForRun(selectedRun) : null;
 
@@ -558,14 +575,14 @@ export default function App() {
                   </div>
 
                   <div className="run-detail__scroll" ref={transcriptRef}>
-                    {selectedRun.status === "awaiting_review" && (
+                    {selectedRun.status === "awaiting_review" && !selectedRun.review_decision && (
                       <ReviewPanel
                         run={selectedRun}
                         liveData={!demoMode}
                         onSubmit={(payload) => reviewRun(selectedRun.run_id, payload)}
                       />
                     )}
-                    {selectedRun.status !== "awaiting_review" && (
+                    {(selectedRun.status !== "awaiting_review" || selectedRun.review_decision) && (
                       <ReviewAudit run={selectedRun} liveData={!demoMode} />
                     )}
 
