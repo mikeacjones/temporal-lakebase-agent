@@ -667,6 +667,25 @@ def test_review_persistence_is_retry_safe_and_updates_live_status() -> None:
     assert repo.calls[2][1][0] == AgentRunStatus.RUNNING.value
     assert all(sql.count("%s") == len(params) for sql, params in repo.calls)
 
+    repo.calls.clear()
+    repo.record_review_decision(
+        ReviewDecisionRecord(
+            review_id="run-2-review-4",
+            decision_id="run-2-review-4:decision-1",
+            review_round=4,
+            run_id="run-2",
+            reviewer_id="reviewer@example.com",
+            decision=ReviewDecision.APPROVE,
+            rationale="Approve the recommendation.",
+            model_recommendation=recommendation,
+            decided_at=datetime.now(timezone.utc),
+        )
+    )
+
+    assert repo.calls[1][1][0] == AgentRunStatus.RUNNING.value
+    assert repo.calls[2][1][0] == AgentRunStatus.RUNNING.value
+    assert all(sql.count("%s") == len(params) for sql, params in repo.calls)
+
 
 def test_lakebase_message_and_event_writes_use_idempotency_keys() -> None:
     class CapturingRepository(LakebaseRepository):
